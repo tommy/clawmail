@@ -1,0 +1,25 @@
+[project]
+name = "clawmail"
+version = "0.1.0"
+description = "AI-powered email triage CLI using Claude"
+readme = "README.md"
+authors = [
+    { name = "Tommy R", email = "tommy@users.noreply.github.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.79.0",
+    "click>=8.3.1",
+    "keyring>=25.7.0",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.1",
+    "pyyaml>=6.0.3",
+    "rich>=14.3.2",
+]
+
+[project.scripts]
+clawmail = "clawmail.cli:cli"
+
+[build-system]
+requires = ["uv_build>=0.10.0,<0.11.0"]
+build-backend = "uv_build"
