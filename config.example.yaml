@@ -26,13 +26,32 @@ rules:
       description: "Newsletters, blog digests, weekly roundups"
       action: move
       target_folder: Newsletters
-    - name: spam
-      description: "Marketing, unsolicited sales pitches, scams"
-      action: trash
-    - name: receipts
-      description: "Purchase confirmations, shipping notifications"
+    - name: purchases
+      description: |
+        Confirmations of orders, shipping or delivery notifications, or receipts.
       action: move
-      target_folder: Receipts
+      target_folder: Purchases
+    - name: spam-politics
+      description: |
+        Emails from political campaigns or other political organizations.
+      action: trash
+    - name: terms-updates
+      description: |
+        Emails from any company or organization notifying me of changes to their terms
+        of service or privacy policies.
+      action: trash
+    - name: login-alert
+      description: |
+        Emails from any company or organization notifying me of login attempts.
+      action: move
+      target_folder: Login Alerts
+    - name: bank-statements
+      description: |
+        Emails from banks or financial institutions that fall into any of the following categories:
+          - Monthly or annual statements
+          - Transaction notifications
+      action: move
+      target_folder: Bank Statements
     - name: keep
       description: "Everything else worth keeping in inbox"
       action: none
