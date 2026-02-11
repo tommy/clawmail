@@ -13,12 +13,15 @@ from rich.table import Table
 from clawmail import __version__
 from clawmail.config import (
     CONFIG_FILE,
+    PROCESSED_FILE,
+    add_processed_uids,
     get_anthropic_api_key,
     get_category_rules,
     get_imap_password,
     get_suggestions_prompt,
     get_system_prompt,
     load_config,
+    load_processed_uids,
     save_config,
     set_anthropic_api_key,
     set_imap_password,
@@ -119,6 +122,7 @@ def fetch(days, limit, fetch_all):
     max_emails = limit or fetch_cfg.get("max_emails", 50)
     unread_only = not fetch_all and fetch_cfg.get("unread_only", True)
     mailbox = fetch_cfg.get("mailbox", "INBOX")
+    excluded_uids = load_processed_uids()
 
     from clawmail.imap import IMAPClient
 
@@ -126,7 +130,9 @@ def fetch(days, limit, fetch_all):
         with IMAPClient(
             imap_cfg["host"], imap_cfg["port"], imap_cfg["email"], password
         ) as client:
-            emails = client.fetch_recent(mailbox, days_back, max_emails, unread_only)
+            emails = client.fetch_recent(
+                mailbox, days_back, max_emails, unread_only, excluded_uids,
+            )
     except Exception as e:
         err_console.print(f"[red]IMAP error: {e}[/red]")
         sys.exit(1)
@@ -156,9 +162,23 @@ def fetch(days, limit, fetch_all):
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.option("--days", default=None, type=int, help="Days back to fetch")
 @click.option("--limit", default=None, type=int, help="Max emails to process")
+@click.option("--all", "fetch_all", is_flag=True, help="Include read emails")
+@click.option(
+    "--non-interactive",
+    is_flag=True,
+    help="Run without normal output or prompts; execute actions automatically",
+)
 @click.option("--label", default=None, type=str, help="Process emails in this Gmail label instead of INBOX")
-def process(dry_run, yes, days, limit, label):
+def process(dry_run, yes, days, limit, fetch_all, non_interactive, label):
     """Fetch, classify with Claude, confirm, and execute actions."""
+    if non_interactive and dry_run:
+        err_console.print("[red]--non-interactive cannot be combined with --dry-run[/red]")
+        sys.exit(2)
+
+    def out(*args, **kwargs):
+        if not non_interactive:
+            console.print(*args, **kwargs)
+
     config = load_config()
     imap_cfg = config["imap"]
     fetch_cfg = config.get("fetch", {})
@@ -178,27 +198,30 @@ def process(dry_run, yes, days, limit, label):
 
     days_back = days or fetch_cfg.get("days_back", 1)
     max_emails = limit or fetch_cfg.get("max_emails", 50)
-    unread_only = fetch_cfg.get("unread_only", True)
+    unread_only = not fetch_all and fetch_cfg.get("unread_only", True)
     mailbox = label or fetch_cfg.get("mailbox", "INBOX")
+    excluded_uids = load_processed_uids()
 
     # Fetch emails
     from clawmail.imap import IMAPClient
 
-    console.print("[bold]Fetching emails...[/bold]")
+    out("[bold]Fetching emails...[/bold]")
     try:
         with IMAPClient(
             imap_cfg["host"], imap_cfg["port"], imap_cfg["email"], password
         ) as client:
-            emails = client.fetch_recent(mailbox, days_back, max_emails, unread_only)
+            emails = client.fetch_recent(
+                mailbox, days_back, max_emails, unread_only, excluded_uids,
+            )
     except Exception as e:
         err_console.print(f"[red]IMAP error: {e}[/red]")
         sys.exit(1)
 
     if not emails:
-        console.print("[dim]No emails to process.[/dim]")
+        out("[dim]No emails to process.[/dim]")
         return
 
-    console.print(f"Found {len(emails)} email(s). Classifying with Claude...")
+    out(f"Found {len(emails)} email(s). Classifying with Claude...")
 
     # Classify
     from clawmail.classifier import EmailClassifier
@@ -217,7 +240,7 @@ def process(dry_run, yes, days, limit, label):
         err_console.print(f"[red]Classification error: {e}[/red]")
         sys.exit(1)
 
-    console.print(
+    out(
         f"[dim]Tokens used: {usage['input_tokens']} in / {usage['output_tokens']} out"
         f" ({usage['input_tokens'] + usage['output_tokens']} total)[/dim]"
     )
@@ -226,70 +249,72 @@ def process(dry_run, yes, days, limit, label):
     email_map = {e.uid: e for e in emails}
 
     # Display proposed actions
-    action_table = Table(title="Proposed Actions")
-    action_table.add_column("UID", style="dim", width=8)
-    action_table.add_column("Subject", min_width=25)
-    action_table.add_column("Category", width=12)
-    action_table.add_column("Conf", width=5)
-    action_table.add_column("Action", width=8)
-    action_table.add_column("Target", width=15)
-    action_table.add_column("Reasoning", min_width=20)
+    if not non_interactive:
+        action_table = Table(title="Proposed Actions")
+        action_table.add_column("UID", style="dim", width=8)
+        action_table.add_column("Subject", min_width=25)
+        action_table.add_column("Category", width=12)
+        action_table.add_column("Conf", width=5)
+        action_table.add_column("Action", width=8)
+        action_table.add_column("Target", width=15)
+        action_table.add_column("Reasoning", min_width=20)
 
-    action_styles = {
-        "flag": "yellow",
-        "move": "blue",
-        "trash": "red",
-        "archive": "cyan",
-        "none": "dim",
-    }
+        action_styles = {
+            "flag": "yellow",
+            "move": "blue",
+            "trash": "red",
+            "archive": "cyan",
+            "none": "dim",
+        }
 
-    for a in actions:
-        email_info = email_map.get(a.email_uid)
-        subject = email_info.subject[:40] if email_info else f"UID {a.email_uid}"
-        style = action_styles.get(a.action.value, "")
-        action_table.add_row(
-            str(a.email_uid),
-            subject,
-            a.category,
-            f"{a.confidence:.0%}",
-            f"[{style}]{a.action.value}[/{style}]",
-            a.target_folder or "",
-            a.reasoning[:50],
-        )
+        for a in actions:
+            email_info = email_map.get(a.email_uid)
+            subject = email_info.subject[:40] if email_info else f"UID {a.email_uid}"
+            style = action_styles.get(a.action.value, "")
+            action_table.add_row(
+                str(a.email_uid),
+                subject,
+                a.category,
+                f"{a.confidence:.0%}",
+                f"[{style}]{a.action.value}[/{style}]",
+                a.target_folder or "",
+                a.reasoning[:50],
+            )
 
-    console.print(action_table)
+        out(action_table)
 
     if dry_run:
-        console.print("\n[dim]Dry run — no actions executed.[/dim]")
+        out("\n[dim]Dry run — no actions executed.[/dim]")
 
         # Suggest new categories
         suggestions_prompt = get_suggestions_prompt(config)
-        console.print("\n[bold]Suggesting new categories...[/bold]")
+        out("\n[bold]Suggesting new categories...[/bold]")
         try:
             suggestions, suggestions_usage = classifier.suggest_categories(
                 emails, categories, actions, suggestions_prompt,
             )
-            console.print(
+            out(
                 f"[dim]Suggestions tokens: {suggestions_usage['input_tokens']} in"
                 f" / {suggestions_usage['output_tokens']} out[/dim]"
             )
             if suggestions.suggestions:
-                stable = Table(title="Suggested New Categories")
-                stable.add_column("Name", width=15)
-                stable.add_column("Description", min_width=25)
-                stable.add_column("Action", width=8)
-                stable.add_column("Reasoning", min_width=25)
-                stable.add_column("Example UIDs", width=12)
+                if not non_interactive:
+                    stable = Table(title="Suggested New Categories")
+                    stable.add_column("Name", width=15)
+                    stable.add_column("Description", min_width=25)
+                    stable.add_column("Action", width=8)
+                    stable.add_column("Reasoning", min_width=25)
+                    stable.add_column("Example UIDs", width=12)
 
-                for s in suggestions.suggestions:
-                    uids = ", ".join(str(u) for u in s.example_uids[:3])
-                    stable.add_row(
-                        s.name, s.description, s.suggested_action,
-                        s.reasoning, uids,
-                    )
-                console.print(stable)
+                    for s in suggestions.suggestions:
+                        uids = ", ".join(str(u) for u in s.example_uids[:3])
+                        stable.add_row(
+                            s.name, s.description, s.suggested_action,
+                            s.reasoning, uids,
+                        )
+                    out(stable)
             else:
-                console.print("[dim]No new categories suggested — current rules look good.[/dim]")
+                out("[dim]No new categories suggested — current rules look good.[/dim]")
         except Exception as e:
             err_console.print(f"[yellow]Could not generate suggestions: {e}[/yellow]")
 
@@ -298,7 +323,14 @@ def process(dry_run, yes, days, limit, label):
     # Confirm
     actionable = [a for a in actions if a.action.value != "none"]
     if not actionable:
-        console.print("\n[dim]No actions to execute (all classified as 'none').[/dim]")
+        added = add_processed_uids(
+            {a.email_uid for a in actions if a.action.value == "none"},
+        )
+        if added:
+            out(
+                f"[dim]Recorded {added} UID(s) in {PROCESSED_FILE}[/dim]"
+            )
+        out("\n[dim]No actions to execute (all classified as 'none').[/dim]")
         return
 
     # Check that target folders exist before executing
@@ -323,19 +355,20 @@ def process(dry_run, yes, days, limit, label):
             )
             sys.exit(1)
 
-    if not yes:
+    if not (yes or non_interactive):
         if not click.confirm(
             f"\nExecute {len(actionable)} action(s)?", default=False
         ):
-            console.print("[dim]Aborted.[/dim]")
+            out("[dim]Aborted.[/dim]")
             return
 
     # Execute actions — flags first (no expunge), then moves/trash/archive
     actionable.sort(key=lambda a: 0 if a.action.value == "flag" else 1)
 
-    console.print("\n[bold]Executing actions...[/bold]")
+    out("\n[bold]Executing actions...[/bold]")
     success_count = 0
     error_count = 0
+    successful_action_uids: set[int] = set()
 
     try:
         with IMAPClient(
@@ -349,10 +382,11 @@ def process(dry_run, yes, days, limit, label):
                     )
                     email_info = email_map.get(a.email_uid)
                     label = email_info.subject[:30] if email_info else f"UID {a.email_uid}"
-                    console.print(
+                    out(
                         f"  [green]✓[/green] {a.action.value}: {label}"
                     )
                     success_count += 1
+                    successful_action_uids.add(a.email_uid)
                 except Exception as e:
                     err_console.print(
                         f"  [red]✗[/red] UID {a.email_uid}: {e}"
@@ -362,9 +396,15 @@ def process(dry_run, yes, days, limit, label):
         err_console.print(f"[red]IMAP error: {e}[/red]")
         sys.exit(1)
 
-    console.print(
+    out(
         f"\n[bold]Done:[/bold] {success_count} succeeded, {error_count} failed."
     )
+
+    processed_now = {a.email_uid for a in actions if a.action.value == "none"}
+    processed_now.update(successful_action_uids)
+    added = add_processed_uids(processed_now)
+    if added:
+        out(f"[dim]Recorded {added} UID(s) in {PROCESSED_FILE}[/dim]")
 
 
 @cli.command()

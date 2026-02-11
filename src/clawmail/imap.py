@@ -126,6 +126,7 @@ class IMAPClient:
         days_back: int = 1,
         max_emails: int = 50,
         unread_only: bool = True,
+        excluded_uids: set[int] | None = None,
     ) -> list[EmailSummary]:
         """Fetch recent emails. Uses readonly select."""
         self.conn.select(mailbox, readonly=True)
@@ -140,6 +141,21 @@ class IMAPClient:
             return []
 
         uids = data[0].split()
+        if excluded_uids:
+            filtered_uids = []
+            for uid_bytes in uids:
+                try:
+                    uid_int = int(uid_bytes)
+                except (TypeError, ValueError):
+                    continue
+                if uid_int in excluded_uids:
+                    continue
+                filtered_uids.append(uid_bytes)
+            uids = filtered_uids
+
+        if not uids:
+            return []
+
         # Take most recent emails (last N UIDs)
         uids = uids[-max_emails:]
 

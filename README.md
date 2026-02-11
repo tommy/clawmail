@@ -47,6 +47,8 @@ clawmail fetch --days 7 --all
 clawmail process --dry-run        # preview without executing
 clawmail process                  # interactive confirmation
 clawmail process --yes            # skip confirmation
+clawmail process --all            # include read emails
+clawmail process --non-interactive # quiet automation mode (executes actions)
 clawmail process --label "GitHub" # process a specific label
 
 # View or edit triage rules
@@ -57,6 +59,7 @@ clawmail rules --edit
 ## Configuration
 
 Config lives at `~/.config/clawmail/config.yaml`. See [config.example.yaml](config.example.yaml) for the full format.
+Processed message UIDs are tracked in `~/.config/clawmail/processed.txt` to avoid re-processing the same emails.
 
 Rules define categories, each with an action:
 
