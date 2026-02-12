@@ -163,20 +163,13 @@ def fetch(days, limit, fetch_all):
 @click.option("--days", default=None, type=int, help="Days back to fetch")
 @click.option("--limit", default=None, type=int, help="Max emails to process")
 @click.option("--all", "fetch_all", is_flag=True, help="Include read emails")
-@click.option(
-    "--non-interactive",
-    is_flag=True,
-    help="Run without normal output or prompts; execute actions automatically",
-)
+@click.option("--quiet", "-q", is_flag=True, help="Suppress non-error output")
 @click.option("--label", default=None, type=str, help="Process emails in this Gmail label instead of INBOX")
-def process(dry_run, yes, days, limit, fetch_all, non_interactive, label):
+def process(dry_run, yes, days, limit, fetch_all, quiet, label):
     """Fetch, classify with Claude, confirm, and execute actions."""
-    if non_interactive and dry_run:
-        err_console.print("[red]--non-interactive cannot be combined with --dry-run[/red]")
-        sys.exit(2)
 
     def out(*args, **kwargs):
-        if not non_interactive:
+        if not quiet:
             console.print(*args, **kwargs)
 
     config = load_config()
@@ -249,7 +242,7 @@ def process(dry_run, yes, days, limit, fetch_all, non_interactive, label):
     email_map = {e.uid: e for e in emails}
 
     # Display proposed actions
-    if not non_interactive:
+    if not quiet:
         action_table = Table(title="Proposed Actions")
         action_table.add_column("UID", style="dim", width=8)
         action_table.add_column("Subject", min_width=25)
@@ -298,7 +291,7 @@ def process(dry_run, yes, days, limit, fetch_all, non_interactive, label):
                 f" / {suggestions_usage['output_tokens']} out[/dim]"
             )
             if suggestions.suggestions:
-                if not non_interactive:
+                if not quiet:
                     stable = Table(title="Suggested New Categories")
                     stable.add_column("Name", width=15)
                     stable.add_column("Description", min_width=25)
@@ -355,7 +348,7 @@ def process(dry_run, yes, days, limit, fetch_all, non_interactive, label):
             )
             sys.exit(1)
 
-    if not (yes or non_interactive):
+    if not yes:
         if not click.confirm(
             f"\nExecute {len(actionable)} action(s)?", default=False
         ):
