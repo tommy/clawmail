@@ -30,6 +30,17 @@ from clawmail.config import (
 console = Console()
 err_console = Console(stderr=True)
 
+MODEL_ALIASES = {
+    "haiku": "claude-haiku-4-5-20251001",
+    "sonnet": "claude-sonnet-4-5-20250929",
+    "opus": "claude-opus-4-6",
+}
+
+
+def resolve_model(name: str) -> str:
+    """Resolve a short model alias to a full model ID."""
+    return MODEL_ALIASES.get(name, name)
+
 
 @click.group()
 @click.version_option(version=__version__)
@@ -165,7 +176,8 @@ def fetch(days, limit, fetch_all):
 @click.option("--all", "fetch_all", is_flag=True, help="Include read emails")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress non-error output")
 @click.option("--label", default=None, type=str, help="Process emails in this Gmail label instead of INBOX")
-def process(dry_run, yes, days, limit, fetch_all, quiet, label):
+@click.option("--compare", default=None, type=str, help="Compare with alternate model (e.g. haiku, opus)")
+def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
     """Fetch, classify with Claude, confirm, and execute actions."""
 
     def out(*args, **kwargs):
@@ -214,7 +226,20 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label):
         out("[dim]No emails to process.[/dim]")
         return
 
-    out(f"Found {len(emails)} email(s). Classifying with Claude...")
+    # Separate already-flagged emails — no need to re-classify them
+    flagged = [e for e in emails if "\\Flagged" in e.flags]
+    to_classify = [e for e in emails if "\\Flagged" not in e.flags]
+
+    if flagged:
+        out(f"Found {len(emails)} email(s), {len(flagged)} already flagged (skipping).")
+    else:
+        out(f"Found {len(emails)} email(s).")
+
+    if not to_classify:
+        out("[dim]All emails already flagged — nothing to classify.[/dim]")
+        return
+
+    out(f"Classifying {len(to_classify)} email(s) with Claude...")
 
     # Classify
     from clawmail.classifier import EmailClassifier
@@ -228,24 +253,85 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label):
             model=anthropic_cfg.get("model", "claude-sonnet-4-5"),
             max_tokens=anthropic_cfg.get("max_tokens", 1024),
         )
-        actions, usage = classifier.classify(emails, categories, system_prompt)
+        actions, usage = classifier.classify(to_classify, categories, system_prompt)
     except Exception as e:
         err_console.print(f"[red]Classification error: {e}[/red]")
         sys.exit(1)
 
+    primary_model = anthropic_cfg.get("model", "claude-sonnet-4-5")
     out(
-        f"[dim]Tokens used: {usage['input_tokens']} in / {usage['output_tokens']} out"
+        f"[dim]{primary_model} tokens: {usage['input_tokens']} in / {usage['output_tokens']} out"
         f" ({usage['input_tokens'] + usage['output_tokens']} total)[/dim]"
     )
 
     # Build lookup for display
     email_map = {e.uid: e for e in emails}
 
+    # --compare mode: classify with alt model and show side-by-side
+    if compare:
+        alt_model = resolve_model(compare)
+        out(f"\nClassifying with alternate model [bold]{alt_model}[/bold]...")
+        try:
+            alt_classifier = EmailClassifier(
+                api_key=api_key,
+                model=alt_model,
+                max_tokens=anthropic_cfg.get("max_tokens", 1024),
+            )
+            alt_actions, alt_usage = alt_classifier.classify(to_classify, categories, system_prompt)
+        except Exception as e:
+            err_console.print(f"[red]Alt model classification error: {e}[/red]")
+            sys.exit(1)
+
+        out(
+            f"[dim]{alt_model} tokens: {alt_usage['input_tokens']} in / {alt_usage['output_tokens']} out"
+            f" ({alt_usage['input_tokens'] + alt_usage['output_tokens']} total)[/dim]"
+        )
+
+        # Build comparison table
+        alt_map = {a.email_uid: a for a in alt_actions}
+        primary_map = {a.email_uid: a for a in actions}
+
+        comp_table = Table(title=f"Comparison: {primary_model} vs {alt_model}")
+        comp_table.add_column("UID", style="dim", width=8)
+        comp_table.add_column("Subject", min_width=20)
+        comp_table.add_column("Primary Category", width=14)
+        comp_table.add_column("Primary Conf", width=6)
+        comp_table.add_column("Alt Category", width=14)
+        comp_table.add_column("Alt Conf", width=6)
+        comp_table.add_column("Match", width=5, justify="center")
+
+        match_count = 0
+        total_count = 0
+        for e in to_classify:
+            pa = primary_map.get(e.uid)
+            aa = alt_map.get(e.uid)
+            p_cat = pa.category if pa else "—"
+            p_conf = f"{pa.confidence:.0%}" if pa else "—"
+            a_cat = aa.category if aa else "—"
+            a_conf = f"{aa.confidence:.0%}" if aa else "—"
+            matched = p_cat == a_cat
+            if matched:
+                match_count += 1
+            total_count += 1
+            match_icon = "[green]✓[/green]" if matched else "[red]✗[/red]"
+            comp_table.add_row(
+                str(e.uid), e.subject[:40], p_cat, p_conf, a_cat, a_conf, match_icon,
+            )
+
+        out(comp_table)
+        out(
+            f"\n[bold]{match_count}/{total_count}[/bold] emails matched between"
+            f" {primary_model} and {alt_model}."
+        )
+        out("\n[dim]Compare mode — no actions executed.[/dim]")
+        return
+
     # Display proposed actions
     if not quiet:
         action_table = Table(title="Proposed Actions")
         action_table.add_column("UID", style="dim", width=8)
         action_table.add_column("Subject", min_width=25)
+        action_table.add_column("Flags", style="dim", width=10)
         action_table.add_column("Category", width=12)
         action_table.add_column("Conf", width=5)
         action_table.add_column("Action", width=8)
@@ -263,10 +349,12 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label):
         for a in actions:
             email_info = email_map.get(a.email_uid)
             subject = email_info.subject[:40] if email_info else f"UID {a.email_uid}"
+            flags = " ".join(f.strip("\\") for f in email_info.flags) if email_info else ""
             style = action_styles.get(a.action.value, "")
             action_table.add_row(
                 str(a.email_uid),
                 subject,
+                flags,
                 a.category,
                 f"{a.confidence:.0%}",
                 f"[{style}]{a.action.value}[/{style}]",
