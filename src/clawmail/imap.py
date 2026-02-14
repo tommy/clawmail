@@ -63,12 +63,7 @@ def _parse_email(uid: int, raw_bytes: bytes) -> EmailSummary:
     """Parse raw email bytes into an EmailSummary."""
     msg = email.message_from_bytes(raw_bytes, policy=email.policy.default)
 
-    # Check for attachments
-    has_attachments = False
-    if msg.is_multipart():
-        for part in msg.iter_attachments():
-            has_attachments = True
-            break
+    has_attachments = msg.is_multipart() and any(True for _ in msg.iter_attachments())
 
     date = None
     date_str = msg.get("Date", "")
