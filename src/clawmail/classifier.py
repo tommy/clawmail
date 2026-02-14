@@ -188,13 +188,9 @@ class EmailClassifier:
         return response.parsed_output, usage
 
     def test_connection(self) -> bool:
-        """Test that the Anthropic API key works."""
+        """Test that the Anthropic API key works without spending tokens."""
         try:
-            self.client.messages.create(
-                model=self.model,
-                max_tokens=16,
-                messages=[{"role": "user", "content": "Say 'ok'"}],
-            )
+            self.client.models.retrieve(self.model)
             return True
         except Exception:
             return False
