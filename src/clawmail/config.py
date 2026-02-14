@@ -179,20 +179,12 @@ def get_category_rules(config: dict) -> list[CategoryRule]:
 
 def get_system_prompt(config: dict) -> str:
     """Get the system prompt from config."""
-    return config.get("rules", {}).get(
-        "system_prompt",
-        "You are an email triage assistant. Categorize each email and decide what action to take.",
-    )
+    return config["rules"]["system_prompt"]
 
 
 def get_suggestions_prompt(config: dict) -> str:
     """Get the suggestions prompt from config."""
-    return config.get("rules", {}).get(
-        "suggestions_prompt",
-        "Based on the emails you just classified, suggest new categories "
-        "that would improve my triage. Focus on recurring patterns that "
-        "don't fit neatly into the existing categories.",
-    )
+    return config["rules"]["suggestions_prompt"]
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
