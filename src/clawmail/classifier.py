@@ -91,14 +91,16 @@ class EmailClassifier:
                         action = ActionType.none
                         target_folder = None
 
-            actions.append(EmailAction(
-                email_uid=c.email_uid,
-                category=c.category,
-                confidence=c.confidence,
-                reasoning=c.reasoning,
-                action=action,
-                target_folder=target_folder,
-            ))
+            actions.append(
+                EmailAction(
+                    email_uid=c.email_uid,
+                    category=c.category,
+                    confidence=c.confidence,
+                    reasoning=c.reasoning,
+                    action=action,
+                    target_folder=target_folder,
+                )
+            )
 
         return actions, usage
 
@@ -110,28 +112,31 @@ class EmailClassifier:
         for cat in categories:
             lines.append(f"- {cat.name}: {cat.description}")
 
-        lines.extend([
-            "",
-            "For each email, assign exactly one category, a confidence score (0-1),",
-            "and a brief reasoning. Return results for ALL emails in the batch.",
-        ])
+        lines.extend(
+            [
+                "",
+                "For each email, assign exactly one category, a confidence score (0-1),",
+                "and a brief reasoning. Return results for ALL emails in the batch.",
+            ]
+        )
         return "\n".join(lines)
 
     def _build_user_message(self, emails: list[EmailSummary]) -> str:
         """Build user message as JSON array of email summaries."""
         summaries = []
         for e in emails:
-            summaries.append({
-                "uid": e.uid,
-                "subject": e.subject,
-                "sender": e.sender,
-                "date": e.date.isoformat() if e.date else "",
-                "snippet": e.snippet,
-                "has_attachments": e.has_attachments,
-            })
-        return (
-            "Classify the following emails:\n\n"
-            + json.dumps(summaries, indent=2, ensure_ascii=False)
+            summaries.append(
+                {
+                    "uid": e.uid,
+                    "subject": e.subject,
+                    "sender": e.sender,
+                    "date": e.date.isoformat() if e.date else "",
+                    "snippet": e.snippet,
+                    "has_attachments": e.has_attachments,
+                }
+            )
+        return "Classify the following emails:\n\n" + json.dumps(
+            summaries, indent=2, ensure_ascii=False
         )
 
     def suggest_categories(
@@ -160,13 +165,15 @@ class EmailClassifier:
         classification_lines = []
         for a in actions:
             subj = email_map[a.email_uid].subject if a.email_uid in email_map else "?"
-            classification_lines.append({
-                "uid": a.email_uid,
-                "subject": subj,
-                "category": a.category,
-                "confidence": a.confidence,
-                "reasoning": a.reasoning,
-            })
+            classification_lines.append(
+                {
+                    "uid": a.email_uid,
+                    "subject": subj,
+                    "category": a.category,
+                    "confidence": a.confidence,
+                    "reasoning": a.reasoning,
+                }
+            )
         user_message = (
             email_summaries
             + "\n\nHere is how these emails were classified:\n\n"

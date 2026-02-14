@@ -14,7 +14,9 @@ from clawmail.models import ActionType, CategoryRule
 load_dotenv()
 
 APP_NAME = "clawmail"
-CONFIG_DIR = Path(os.environ.get("CLAWMAIL_CONFIG_DIR", "~/.config/clawmail")).expanduser()
+CONFIG_DIR = Path(
+    os.environ.get("CLAWMAIL_CONFIG_DIR", "~/.config/clawmail")
+).expanduser()
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
 PROCESSED_FILE = CONFIG_DIR / "processed.txt"
 
@@ -40,11 +42,33 @@ DEFAULT_CONFIG = {
             "Categorize each email and decide what action to take."
         ),
         "categories": [
-            {"name": "important", "description": "Emails from colleagues, clients, or about active projects", "action": "flag"},
-            {"name": "newsletter", "description": "Newsletters, blog digests, weekly roundups", "action": "move", "target_folder": "Newsletters"},
-            {"name": "spam", "description": "Marketing, unsolicited sales pitches, scams", "action": "trash"},
-            {"name": "receipts", "description": "Purchase confirmations, shipping notifications", "action": "move", "target_folder": "Receipts"},
-            {"name": "keep", "description": "Everything else worth keeping in inbox", "action": "none"},
+            {
+                "name": "important",
+                "description": "Emails from colleagues, clients, or about active projects",
+                "action": "flag",
+            },
+            {
+                "name": "newsletter",
+                "description": "Newsletters, blog digests, weekly roundups",
+                "action": "move",
+                "target_folder": "Newsletters",
+            },
+            {
+                "name": "spam",
+                "description": "Marketing, unsolicited sales pitches, scams",
+                "action": "trash",
+            },
+            {
+                "name": "receipts",
+                "description": "Purchase confirmations, shipping notifications",
+                "action": "move",
+                "target_folder": "Receipts",
+            },
+            {
+                "name": "keep",
+                "description": "Everything else worth keeping in inbox",
+                "action": "none",
+            },
         ],
         "suggestions_prompt": (
             "Based on the emails you just classified, suggest new categories "
@@ -141,12 +165,14 @@ def get_category_rules(config: dict) -> list[CategoryRule]:
     raw = config.get("rules", {}).get("categories", [])
     rules = []
     for entry in raw:
-        rules.append(CategoryRule(
-            name=entry["name"],
-            description=entry.get("description", ""),
-            action=ActionType(entry.get("action", "none")),
-            target_folder=entry.get("target_folder"),
-        ))
+        rules.append(
+            CategoryRule(
+                name=entry["name"],
+                description=entry.get("description", ""),
+                action=ActionType(entry.get("action", "none")),
+                target_folder=entry.get("target_folder"),
+            )
+        )
     return rules
 
 

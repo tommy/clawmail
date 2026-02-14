@@ -29,7 +29,9 @@ def _quote_folder(name: str) -> str:
 def _strip_html(html: str) -> str:
     """Remove HTML tags using stdlib regex. Avoids beautifulsoup dependency."""
     text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(
+        r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE
+    )
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"&nbsp;", " ", text)
     text = re.sub(r"&amp;", "&", text)
@@ -131,10 +133,12 @@ class IMAPClient:
         """Fetch recent emails. Uses readonly select."""
         self.conn.select(mailbox, readonly=True)
 
-        since_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%d-%b-%Y")
-        criteria = f'(SINCE {since_date})'
+        since_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime(
+            "%d-%b-%Y"
+        )
+        criteria = f"(SINCE {since_date})"
         if unread_only:
-            criteria = f'(UNSEEN SINCE {since_date})'
+            criteria = f"(UNSEEN SINCE {since_date})"
 
         status, data = self.conn.uid("search", None, criteria)
         if status != "OK" or not data[0]:

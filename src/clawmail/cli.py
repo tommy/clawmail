@@ -143,7 +143,11 @@ def fetch(days, limit, fetch_all):
             imap_cfg["host"], imap_cfg["port"], imap_cfg["email"], password
         ) as client:
             emails = client.fetch_recent(
-                mailbox, days_back, max_emails, unread_only, excluded_uids,
+                mailbox,
+                days_back,
+                max_emails,
+                unread_only,
+                excluded_uids,
             )
     except Exception as e:
         err_console.print(f"[red]IMAP error: {e}[/red]")
@@ -176,8 +180,18 @@ def fetch(days, limit, fetch_all):
 @click.option("--limit", default=None, type=int, help="Max emails to process")
 @click.option("--all", "fetch_all", is_flag=True, help="Include read emails")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress non-error output")
-@click.option("--label", default=None, type=str, help="Process emails in this Gmail label instead of INBOX")
-@click.option("--compare", default=None, type=str, help="Compare with alternate model (e.g. haiku, opus)")
+@click.option(
+    "--label",
+    default=None,
+    type=str,
+    help="Process emails in this Gmail label instead of INBOX",
+)
+@click.option(
+    "--compare",
+    default=None,
+    type=str,
+    help="Compare with alternate model (e.g. haiku, opus)",
+)
 def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
     """Fetch, classify with Claude, confirm, and execute actions."""
 
@@ -217,7 +231,11 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
             imap_cfg["host"], imap_cfg["port"], imap_cfg["email"], password
         ) as client:
             emails = client.fetch_recent(
-                mailbox, days_back, max_emails, unread_only, excluded_uids,
+                mailbox,
+                days_back,
+                max_emails,
+                unread_only,
+                excluded_uids,
             )
     except Exception as e:
         err_console.print(f"[red]IMAP error: {e}[/red]")
@@ -278,7 +296,9 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
                 model=alt_model,
                 max_tokens=anthropic_cfg.get("max_tokens", 1024),
             )
-            alt_actions, alt_usage = alt_classifier.classify(to_classify, categories, system_prompt)
+            alt_actions, alt_usage = alt_classifier.classify(
+                to_classify, categories, system_prompt
+            )
         except Exception as e:
             err_console.print(f"[red]Alt model classification error: {e}[/red]")
             sys.exit(1)
@@ -316,7 +336,13 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
             total_count += 1
             match_icon = "[green]✓[/green]" if matched else "[red]✗[/red]"
             comp_table.add_row(
-                str(e.uid), e.subject[:40], p_cat, p_conf, a_cat, a_conf, match_icon,
+                str(e.uid),
+                e.subject[:40],
+                p_cat,
+                p_conf,
+                a_cat,
+                a_conf,
+                match_icon,
             )
 
         out(comp_table)
@@ -350,7 +376,9 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
         for a in actions:
             email_info = email_map.get(a.email_uid)
             subject = email_info.subject[:40] if email_info else f"UID {a.email_uid}"
-            flags = " ".join(f.strip("\\") for f in email_info.flags) if email_info else ""
+            flags = (
+                " ".join(f.strip("\\") for f in email_info.flags) if email_info else ""
+            )
             style = action_styles.get(a.action.value, "")
             action_table.add_row(
                 str(a.email_uid),
@@ -373,7 +401,10 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
         out("\n[bold]Suggesting new categories...[/bold]")
         try:
             suggestions, suggestions_usage = classifier.suggest_categories(
-                emails, categories, actions, suggestions_prompt,
+                emails,
+                categories,
+                actions,
+                suggestions_prompt,
             )
             out(
                 f"[dim]Suggestions tokens: {suggestions_usage['input_tokens']} in"
@@ -391,8 +422,11 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
                     for s in suggestions.suggestions:
                         uids = ", ".join(str(u) for u in s.example_uids[:3])
                         stable.add_row(
-                            s.name, s.description, s.suggested_action,
-                            s.reasoning, uids,
+                            s.name,
+                            s.description,
+                            s.suggested_action,
+                            s.reasoning,
+                            uids,
                         )
                     out(stable)
             else:
@@ -409,9 +443,7 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
             {a.email_uid for a in actions if a.action.value == "none"},
         )
         if added:
-            out(
-                f"[dim]Recorded {added} UID(s) in {PROCESSED_FILE}[/dim]"
-            )
+            out(f"[dim]Recorded {added} UID(s) in {PROCESSED_FILE}[/dim]")
         out("\n[dim]No actions to execute (all classified as 'none').[/dim]")
         return
 
@@ -432,9 +464,7 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
             err_console.print(
                 f"[red]Missing Gmail labels: {', '.join(sorted(missing))}[/red]"
             )
-            err_console.print(
-                "[red]Create them in Gmail before running again.[/red]"
-            )
+            err_console.print("[red]Create them in Gmail before running again.[/red]")
             sys.exit(1)
 
     if not yes:
@@ -462,27 +492,25 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
             for a in actionable:
                 try:
                     client.execute_action(
-                        a.email_uid, a.action.value, a.target_folder,
+                        a.email_uid,
+                        a.action.value,
+                        a.target_folder,
                     )
                     email_info = email_map.get(a.email_uid)
-                    label = email_info.subject[:30] if email_info else f"UID {a.email_uid}"
-                    out(
-                        f"  [green]✓[/green] {a.action.value}: {label}"
+                    label = (
+                        email_info.subject[:30] if email_info else f"UID {a.email_uid}"
                     )
+                    out(f"  [green]✓[/green] {a.action.value}: {label}")
                     success_count += 1
                     successful_action_uids.add(a.email_uid)
                 except Exception as e:
-                    err_console.print(
-                        f"  [red]✗[/red] UID {a.email_uid}: {e}"
-                    )
+                    err_console.print(f"  [red]✗[/red] UID {a.email_uid}: {e}")
                     error_count += 1
     except Exception as e:
         err_console.print(f"[red]IMAP error: {e}[/red]")
         sys.exit(1)
 
-    out(
-        f"\n[bold]Done:[/bold] {success_count} succeeded, {error_count} failed."
-    )
+    out(f"\n[bold]Done:[/bold] {success_count} succeeded, {error_count} failed.")
 
     processed_now = {a.email_uid for a in actions if a.action.value == "none"}
     processed_now.update(successful_action_uids)
