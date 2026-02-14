@@ -59,7 +59,7 @@ class CategorySuggestion(BaseModel):
 
     name: str = Field(description="Short snake_case name for the category")
     description: str = Field(description="What emails this category would match")
-    suggested_action: str = Field(
+    suggested_action: ActionType = Field(
         description="Recommended action: none, flag, move, trash, or archive"
     )
     example_uids: list[int] = Field(

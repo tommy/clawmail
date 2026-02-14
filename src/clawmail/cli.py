@@ -463,7 +463,7 @@ def _process_with_connection(
                         stable.add_row(
                             s.name,
                             s.description,
-                            s.suggested_action,
+                            s.suggested_action.value,
                             s.reasoning,
                             uids,
                         )
