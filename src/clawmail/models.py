@@ -36,6 +36,7 @@ class CategoryRule(BaseModel):
     description: str = ""
     action: ActionType = ActionType.none
     target_folder: str | None = None
+    older_than_minutes: int | None = None
 
 
 class EmailClassification(BaseModel):

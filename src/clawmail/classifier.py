@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import anthropic
 
 from clawmail.models import (
+    ActionType,
     CategoryRule,
     ClassificationResult,
     EmailAction,
@@ -65,21 +67,37 @@ class EmailClassifier:
         # Resolve classifications into actions using config rules
         actions = []
         category_map = {c.name: c for c in categories}
-        email_uids = {e.uid for e in emails}
+        email_map = {e.uid: e for e in emails}
+        now = datetime.now(timezone.utc)
 
         for c in result.classifications:
-            if c.email_uid not in email_uids:
+            if c.email_uid not in email_map:
                 continue
             rule = category_map.get(c.category)
             if not rule:
                 continue
+
+            action = rule.action
+            target_folder = rule.target_folder
+
+            # If the rule has an age gate, downgrade to "none" for young emails
+            if rule.older_than_minutes is not None:
+                email_date = email_map[c.email_uid].date
+                if email_date is not None:
+                    if email_date.tzinfo is None:
+                        email_date = email_date.replace(tzinfo=timezone.utc)
+                    age_minutes = (now - email_date).total_seconds() / 60
+                    if age_minutes < rule.older_than_minutes:
+                        action = ActionType.none
+                        target_folder = None
+
             actions.append(EmailAction(
                 email_uid=c.email_uid,
                 category=c.category,
                 confidence=c.confidence,
                 reasoning=c.reasoning,
-                action=rule.action,
-                target_folder=rule.target_folder,
+                action=action,
+                target_folder=target_folder,
             ))
 
         return actions, usage

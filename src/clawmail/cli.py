@@ -8,6 +8,7 @@ import sys
 
 import click
 from rich.console import Console
+from rich.prompt import Confirm
 from rich.table import Table
 
 from clawmail import __version__
@@ -27,7 +28,7 @@ from clawmail.config import (
     set_imap_password,
 )
 
-console = Console()
+console = Console(width=None if sys.stdout.isatty() else 160)
 err_console = Console(stderr=True)
 
 MODEL_ALIASES = {
@@ -328,7 +329,7 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
 
     # Display proposed actions
     if not quiet:
-        action_table = Table(title="Proposed Actions")
+        action_table = Table(title="Proposed Actions", expand=True)
         action_table.add_column("UID", style="dim", width=8)
         action_table.add_column("Subject", min_width=25)
         action_table.add_column("Flags", style="dim", width=10)
@@ -359,7 +360,7 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
                 f"{a.confidence:.0%}",
                 f"[{style}]{a.action.value}[/{style}]",
                 a.target_folder or "",
-                a.reasoning[:50],
+                a.reasoning,
             )
 
         out(action_table)
@@ -437,8 +438,10 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
             sys.exit(1)
 
     if not yes:
-        if not click.confirm(
-            f"\nExecute {len(actionable)} action(s)?", default=False
+        if not Confirm.ask(
+            f"\nExecute {len(actionable)} action(s)?",
+            default=False,
+            console=console,
         ):
             out("[dim]Aborted.[/dim]")
             return
@@ -512,9 +515,11 @@ def rules(edit):
     table.add_column("Description", min_width=30)
     table.add_column("Action", width=8)
     table.add_column("Target Folder", width=15)
+    table.add_column("Age Gate", style="dim", width=10)
 
     for c in categories:
-        table.add_row(c.name, c.description, c.action.value, c.target_folder or "")
+        age = f"{c.older_than_minutes}m" if c.older_than_minutes is not None else ""
+        table.add_row(c.name, c.description, c.action.value, c.target_folder or "", age)
 
     console.print(table)
 
