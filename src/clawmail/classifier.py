@@ -123,18 +123,10 @@ class EmailClassifier:
 
     def _build_user_message(self, emails: list[EmailSummary]) -> str:
         """Build user message as JSON array of email summaries."""
-        summaries = []
-        for e in emails:
-            summaries.append(
-                {
-                    "uid": e.uid,
-                    "subject": e.subject,
-                    "sender": e.sender,
-                    "date": e.date.isoformat() if e.date else "",
-                    "snippet": e.snippet,
-                    "has_attachments": e.has_attachments,
-                }
-            )
+        fields = {"uid", "subject", "sender", "date", "snippet", "has_attachments"}
+        summaries = [
+            e.model_dump(include=fields, mode="json") for e in emails
+        ]
         return "Classify the following emails:\n\n" + json.dumps(
             summaries, indent=2, ensure_ascii=False
         )
