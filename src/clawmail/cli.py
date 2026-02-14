@@ -222,24 +222,63 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
     mailbox = label or fetch_cfg.get("mailbox", "INBOX")
     excluded_uids = load_processed_uids()
 
-    # Fetch emails
     from clawmail.imap import IMAPClient
 
-    out("[bold]Fetching emails...[/bold]")
     try:
         with IMAPClient(
             imap_cfg["host"], imap_cfg["port"], imap_cfg["email"], password
-        ) as client:
-            emails = client.fetch_recent(
+        ) as imap_client:
+            _process_with_connection(
+                imap_client,
+                config,
+                imap_cfg,
+                fetch_cfg,
+                anthropic_cfg,
+                api_key,
                 mailbox,
                 days_back,
                 max_emails,
                 unread_only,
                 excluded_uids,
+                dry_run,
+                yes,
+                quiet,
+                compare,
+                out,
             )
     except Exception as e:
         err_console.print(f"[red]IMAP error: {e}[/red]")
         sys.exit(1)
+
+
+def _process_with_connection(
+    imap_client,
+    config,
+    imap_cfg,
+    fetch_cfg,
+    anthropic_cfg,
+    api_key,
+    mailbox,
+    days_back,
+    max_emails,
+    unread_only,
+    excluded_uids,
+    dry_run,
+    yes,
+    quiet,
+    compare,
+    out,
+):
+    """Core process logic using a single IMAP connection."""
+    # Fetch emails (readonly)
+    out("[bold]Fetching emails...[/bold]")
+    emails = imap_client.fetch_recent(
+        mailbox,
+        days_back,
+        max_emails,
+        unread_only,
+        excluded_uids,
+    )
 
     if not emails:
         out("[dim]No emails to process.[/dim]")
@@ -401,7 +440,7 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
         out("\n[bold]Suggesting new categories...[/bold]")
         try:
             suggestions, suggestions_usage = classifier.suggest_categories(
-                emails,
+                to_classify,
                 categories,
                 actions,
                 suggestions_prompt,
@@ -450,15 +489,7 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
     # Check that target folders exist before executing
     needed_folders = {a.target_folder for a in actionable if a.target_folder}
     if needed_folders:
-        try:
-            with IMAPClient(
-                imap_cfg["host"], imap_cfg["port"], imap_cfg["email"], password
-            ) as client:
-                existing_folders = set(client.list_folders())
-        except Exception as e:
-            err_console.print(f"[red]IMAP error checking folders: {e}[/red]")
-            sys.exit(1)
-
+        existing_folders = set(imap_client.list_folders())
         missing = needed_folders - existing_folders
         if missing:
             err_console.print(
@@ -484,31 +515,22 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
     error_count = 0
     successful_action_uids: set[int] = set()
 
-    try:
-        with IMAPClient(
-            imap_cfg["host"], imap_cfg["port"], imap_cfg["email"], password
-        ) as client:
-            client.select_mailbox(mailbox)
-            for a in actionable:
-                try:
-                    client.execute_action(
-                        a.email_uid,
-                        a.action.value,
-                        a.target_folder,
-                    )
-                    email_info = email_map.get(a.email_uid)
-                    label = (
-                        email_info.subject[:30] if email_info else f"UID {a.email_uid}"
-                    )
-                    out(f"  [green]✓[/green] {a.action.value}: {label}")
-                    success_count += 1
-                    successful_action_uids.add(a.email_uid)
-                except Exception as e:
-                    err_console.print(f"  [red]✗[/red] UID {a.email_uid}: {e}")
-                    error_count += 1
-    except Exception as e:
-        err_console.print(f"[red]IMAP error: {e}[/red]")
-        sys.exit(1)
+    imap_client.select_mailbox(mailbox)
+    for a in actionable:
+        try:
+            imap_client.execute_action(
+                a.email_uid,
+                a.action.value,
+                a.target_folder,
+            )
+            email_info = email_map.get(a.email_uid)
+            label = email_info.subject[:30] if email_info else f"UID {a.email_uid}"
+            out(f"  [green]✓[/green] {a.action.value}: {label}")
+            success_count += 1
+            successful_action_uids.add(a.email_uid)
+        except Exception as e:
+            err_console.print(f"  [red]✗[/red] UID {a.email_uid}: {e}")
+            error_count += 1
 
     out(f"\n[bold]Done:[/bold] {success_count} succeeded, {error_count} failed.")
 
