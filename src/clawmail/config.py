@@ -171,6 +171,7 @@ def get_category_rules(config: dict) -> list[CategoryRule]:
                 description=entry.get("description", ""),
                 action=ActionType(entry.get("action", "none")),
                 target_folder=entry.get("target_folder"),
+                older_than_minutes=entry.get("older_than_minutes"),
             )
         )
     return rules
