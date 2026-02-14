@@ -121,7 +121,6 @@ def add_processed_uids(uids: set[int]) -> int:
     if not uids:
         return 0
 
-    _ensure_processed_file()
     existing = load_processed_uids()
     new_uids = sorted(uids - existing)
     if not new_uids:
