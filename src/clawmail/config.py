@@ -7,11 +7,8 @@ from pathlib import Path
 
 import keyring
 import yaml
-from dotenv import load_dotenv
 
 from clawmail.models import ActionType, CategoryRule
-
-load_dotenv()
 
 APP_NAME = "clawmail"
 CONFIG_DIR = Path(
