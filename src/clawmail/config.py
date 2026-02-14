@@ -8,7 +8,7 @@ from pathlib import Path
 import keyring
 import yaml
 
-from clawmail.models import ActionType, CategoryRule
+from clawmail.models import AppConfig
 
 APP_NAME = "clawmail"
 CONFIG_DIR = Path(
@@ -17,82 +17,22 @@ CONFIG_DIR = Path(
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
 PROCESSED_FILE = CONFIG_DIR / "processed.txt"
 
-DEFAULT_CONFIG = {
-    "imap": {
-        "host": "imap.gmail.com",
-        "port": 993,
-        "email": "",
-    },
-    "anthropic": {
-        "model": "claude-sonnet-4-5",
-        "max_tokens": 1024,
-    },
-    "fetch": {
-        "mailbox": "INBOX",
-        "days_back": 1,
-        "max_emails": 50,
-        "unread_only": True,
-    },
-    "rules": {
-        "system_prompt": (
-            "You are an email triage assistant. "
-            "Categorize each email and decide what action to take."
-        ),
-        "categories": [
-            {
-                "name": "important",
-                "description": "Emails from colleagues, clients, or about active projects",
-                "action": "flag",
-            },
-            {
-                "name": "newsletter",
-                "description": "Newsletters, blog digests, weekly roundups",
-                "action": "move",
-                "target_folder": "Newsletters",
-            },
-            {
-                "name": "spam",
-                "description": "Marketing, unsolicited sales pitches, scams",
-                "action": "trash",
-            },
-            {
-                "name": "receipts",
-                "description": "Purchase confirmations, shipping notifications",
-                "action": "move",
-                "target_folder": "Receipts",
-            },
-            {
-                "name": "keep",
-                "description": "Everything else worth keeping in inbox",
-                "action": "none",
-            },
-        ],
-        "suggestions_prompt": (
-            "Based on the emails you just classified, suggest new categories "
-            "that would improve my triage. Focus on recurring patterns that "
-            "don't fit neatly into the existing categories."
-        ),
-    },
-}
 
-
-def load_config() -> dict:
+def load_config() -> AppConfig:
     """Load config from YAML file, falling back to defaults."""
     if CONFIG_FILE.exists():
         with open(CONFIG_FILE) as f:
             user_config = yaml.safe_load(f) or {}
-        # Merge with defaults (user config wins)
-        config = _deep_merge(DEFAULT_CONFIG, user_config)
-    else:
-        config = DEFAULT_CONFIG.copy()
-    return config
+        return AppConfig.model_validate(user_config)
+    return AppConfig()
 
 
-def save_config(config: dict) -> None:
+def save_config(config: AppConfig) -> None:
     """Write config to YAML file."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    data = config.model_dump(mode="json")
     with open(CONFIG_FILE, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 
 def load_processed_uids() -> set[int]:
@@ -154,44 +94,6 @@ def get_anthropic_api_key() -> str | None:
 def set_anthropic_api_key(api_key: str) -> None:
     """Store Anthropic API key in OS keyring."""
     keyring.set_password(APP_NAME, "anthropic_api_key", api_key)
-
-
-def get_category_rules(config: dict) -> list[CategoryRule]:
-    """Parse category rules from config dict."""
-    raw = config.get("rules", {}).get("categories", [])
-    rules = []
-    for entry in raw:
-        rules.append(
-            CategoryRule(
-                name=entry["name"],
-                description=entry.get("description", ""),
-                action=ActionType(entry.get("action", "none")),
-                target_folder=entry.get("target_folder"),
-                older_than_minutes=entry.get("older_than_minutes"),
-            )
-        )
-    return rules
-
-
-def get_system_prompt(config: dict) -> str:
-    """Get the system prompt from config."""
-    return config["rules"]["system_prompt"]
-
-
-def get_suggestions_prompt(config: dict) -> str:
-    """Get the suggestions prompt from config."""
-    return config["rules"]["suggestions_prompt"]
-
-
-def _deep_merge(base: dict, override: dict) -> dict:
-    """Recursively merge override into base, returning a new dict."""
-    result = base.copy()
-    for key, value in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = _deep_merge(result[key], value)
-        else:
-            result[key] = value
-    return result
 
 
 def _ensure_processed_file() -> None:

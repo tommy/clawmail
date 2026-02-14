@@ -17,16 +17,14 @@ from clawmail.config import (
     PROCESSED_FILE,
     add_processed_uids,
     get_anthropic_api_key,
-    get_category_rules,
     get_imap_password,
-    get_suggestions_prompt,
-    get_system_prompt,
     load_config,
     load_processed_uids,
     save_config,
     set_anthropic_api_key,
     set_imap_password,
 )
+from clawmail.models import AppConfig
 
 console = Console(width=None if sys.stdout.isatty() else 160)
 err_console = Console(stderr=True)
@@ -57,9 +55,8 @@ def configure():
     console.print("\n[bold]Clawmail Configuration[/bold]\n")
 
     # IMAP setup
-    current_email = config.get("imap", {}).get("email", "")
-    email_addr = click.prompt("Gmail address", default=current_email or None)
-    config.setdefault("imap", {})["email"] = email_addr
+    email_addr = click.prompt("Gmail address", default=config.imap.email or None)
+    config.imap.email = email_addr
 
     console.print(
         "\n[dim]Gmail requires an App Password (not your regular password).[/dim]"
@@ -84,9 +81,8 @@ def configure():
     try:
         from clawmail.imap import IMAPClient
 
-        imap_cfg = config["imap"]
         with IMAPClient(
-            imap_cfg["host"], imap_cfg["port"], imap_cfg["email"], app_password
+            config.imap.host, config.imap.port, config.imap.email, app_password
         ) as client:
             if client.test_connection():
                 console.print("[green]OK[/green]")
@@ -100,10 +96,9 @@ def configure():
     try:
         from clawmail.classifier import EmailClassifier
 
-        anthropic_cfg = config.get("anthropic", {})
         classifier = EmailClassifier(
             api_key=api_key,
-            model=anthropic_cfg.get("model", "claude-sonnet-4-5"),
+            model=config.anthropic.model,
         )
         if classifier.test_connection():
             console.print("[green]OK[/green]")
@@ -122,25 +117,23 @@ def configure():
 def fetch(days, limit, fetch_all):
     """Fetch and display recent emails (read-only)."""
     config = load_config()
-    imap_cfg = config["imap"]
-    fetch_cfg = config.get("fetch", {})
 
     password = get_imap_password()
     if not password:
         err_console.print("[red]No IMAP password found. Run: clawmail configure[/red]")
         sys.exit(1)
 
-    days_back = days or fetch_cfg.get("days_back", 1)
-    max_emails = limit or fetch_cfg.get("max_emails", 50)
-    unread_only = not fetch_all and fetch_cfg.get("unread_only", True)
-    mailbox = fetch_cfg.get("mailbox", "INBOX")
+    days_back = days or config.fetch.days_back
+    max_emails = limit or config.fetch.max_emails
+    unread_only = not fetch_all and config.fetch.unread_only
+    mailbox = config.fetch.mailbox
     excluded_uids = load_processed_uids()
 
     from clawmail.imap import IMAPClient
 
     try:
         with IMAPClient(
-            imap_cfg["host"], imap_cfg["port"], imap_cfg["email"], password
+            config.imap.host, config.imap.port, config.imap.email, password
         ) as client:
             emails = client.fetch_recent(
                 mailbox,
@@ -200,9 +193,6 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
             console.print(*args, **kwargs)
 
     config = load_config()
-    imap_cfg = config["imap"]
-    fetch_cfg = config.get("fetch", {})
-    anthropic_cfg = config.get("anthropic", {})
 
     password = get_imap_password()
     api_key = get_anthropic_api_key()
@@ -216,24 +206,21 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
         )
         sys.exit(1)
 
-    days_back = days or fetch_cfg.get("days_back", 1)
-    max_emails = limit or fetch_cfg.get("max_emails", 50)
-    unread_only = not fetch_all and fetch_cfg.get("unread_only", True)
-    mailbox = label or fetch_cfg.get("mailbox", "INBOX")
+    days_back = days or config.fetch.days_back
+    max_emails = limit or config.fetch.max_emails
+    unread_only = not fetch_all and config.fetch.unread_only
+    mailbox = label or config.fetch.mailbox
     excluded_uids = load_processed_uids()
 
     from clawmail.imap import IMAPClient
 
     try:
         with IMAPClient(
-            imap_cfg["host"], imap_cfg["port"], imap_cfg["email"], password
+            config.imap.host, config.imap.port, config.imap.email, password
         ) as imap_client:
             _process_with_connection(
                 imap_client,
                 config,
-                imap_cfg,
-                fetch_cfg,
-                anthropic_cfg,
                 api_key,
                 mailbox,
                 days_back,
@@ -253,20 +240,17 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
 
 def _process_with_connection(
     imap_client,
-    config,
-    imap_cfg,
-    fetch_cfg,
-    anthropic_cfg,
-    api_key,
-    mailbox,
-    days_back,
-    max_emails,
-    unread_only,
-    excluded_uids,
-    dry_run,
-    yes,
-    quiet,
-    compare,
+    config: AppConfig,
+    api_key: str,
+    mailbox: str,
+    days_back: int,
+    max_emails: int,
+    unread_only: bool,
+    excluded_uids: set[int],
+    dry_run: bool,
+    yes: bool,
+    quiet: bool,
+    compare: str | None,
     out,
 ):
     """Core process logic using a single IMAP connection."""
@@ -302,23 +286,22 @@ def _process_with_connection(
     # Classify
     from clawmail.classifier import EmailClassifier
 
-    categories = get_category_rules(config)
-    system_prompt = get_system_prompt(config)
+    categories = config.rules.categories
+    system_prompt = config.rules.system_prompt
 
     try:
         classifier = EmailClassifier(
             api_key=api_key,
-            model=anthropic_cfg.get("model", "claude-sonnet-4-5"),
-            max_tokens=anthropic_cfg.get("max_tokens", 1024),
+            model=config.anthropic.model,
+            max_tokens=config.anthropic.max_tokens,
         )
         actions, usage = classifier.classify(to_classify, categories, system_prompt)
     except Exception as e:
         err_console.print(f"[red]Classification error: {e}[/red]")
         sys.exit(1)
 
-    primary_model = anthropic_cfg.get("model", "claude-sonnet-4-5")
     out(
-        f"[dim]{primary_model} tokens: {usage['input_tokens']} in / {usage['output_tokens']} out"
+        f"[dim]{config.anthropic.model} tokens: {usage['input_tokens']} in / {usage['output_tokens']} out"
         f" ({usage['input_tokens'] + usage['output_tokens']} total)[/dim]"
     )
 
@@ -333,7 +316,7 @@ def _process_with_connection(
             alt_classifier = EmailClassifier(
                 api_key=api_key,
                 model=alt_model,
-                max_tokens=anthropic_cfg.get("max_tokens", 1024),
+                max_tokens=config.anthropic.max_tokens,
             )
             alt_actions, alt_usage = alt_classifier.classify(
                 to_classify, categories, system_prompt
@@ -351,7 +334,7 @@ def _process_with_connection(
         alt_map = {a.email_uid: a for a in alt_actions}
         primary_map = {a.email_uid: a for a in actions}
 
-        comp_table = Table(title=f"Comparison: {primary_model} vs {alt_model}")
+        comp_table = Table(title=f"Comparison: {config.anthropic.model} vs {alt_model}")
         comp_table.add_column("UID", style="dim", width=8)
         comp_table.add_column("Subject", min_width=20)
         comp_table.add_column("Primary Category", width=14)
@@ -387,7 +370,7 @@ def _process_with_connection(
         out(comp_table)
         out(
             f"\n[bold]{match_count}/{total_count}[/bold] emails matched between"
-            f" {primary_model} and {alt_model}."
+            f" {config.anthropic.model} and {alt_model}."
         )
         out("\n[dim]Compare mode — no actions executed.[/dim]")
         return
@@ -436,14 +419,13 @@ def _process_with_connection(
         out("\n[dim]Dry run — no actions executed.[/dim]")
 
         # Suggest new categories
-        suggestions_prompt = get_suggestions_prompt(config)
         out("\n[bold]Suggesting new categories...[/bold]")
         try:
             suggestions, suggestions_usage = classifier.suggest_categories(
                 to_classify,
                 categories,
                 actions,
-                suggestions_prompt,
+                config.rules.suggestions_prompt,
             )
             out(
                 f"[dim]Suggestions tokens: {suggestions_usage['input_tokens']} in"
@@ -554,9 +536,8 @@ def rules(edit):
         return
 
     config = load_config()
-    categories = get_category_rules(config)
 
-    if not categories:
+    if not config.rules.categories:
         console.print("[dim]No rules configured.[/dim]")
         return
 
@@ -567,13 +548,13 @@ def rules(edit):
     table.add_column("Target Folder", width=15)
     table.add_column("Age Gate", style="dim", width=10)
 
-    for c in categories:
+    for c in config.rules.categories:
         age = f"{c.older_than_minutes}m" if c.older_than_minutes is not None else ""
         table.add_row(c.name, c.description, c.action.value, c.target_folder or "", age)
 
     console.print(table)
 
-    console.print(f"\n[dim]System prompt:[/dim] {get_system_prompt(config)[:100]}...")
+    console.print(f"\n[dim]System prompt:[/dim] {config.rules.system_prompt[:100]}...")
     console.print(f"[dim]Config file:[/dim] {CONFIG_FILE}")
 
 
@@ -581,7 +562,6 @@ def rules(edit):
 def folders():
     """List all IMAP folders."""
     config = load_config()
-    imap_cfg = config["imap"]
 
     password = get_imap_password()
     if not password:
@@ -592,7 +572,7 @@ def folders():
 
     try:
         with IMAPClient(
-            imap_cfg["host"], imap_cfg["port"], imap_cfg["email"], password
+            config.imap.host, config.imap.port, config.imap.email, password
         ) as client:
             folder_list = client.list_folders()
     except Exception as e:
