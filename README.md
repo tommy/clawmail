@@ -41,15 +41,17 @@ clawmail folders
 
 # Fetch and display recent emails (read-only)
 clawmail fetch
-clawmail fetch --days 7 --all
+clawmail fetch --days 7 --limit 20 --all
 
 # Classify and act on emails
-clawmail process --dry-run        # preview without executing
-clawmail process                  # interactive confirmation
-clawmail process --yes            # skip confirmation
-clawmail process --all            # include read emails
-clawmail process --non-interactive # quiet automation mode (executes actions)
-clawmail process --label "GitHub" # process a specific label
+clawmail process --dry-run          # preview without executing
+clawmail process                    # interactive confirmation
+clawmail process --yes              # skip confirmation
+clawmail process --all              # include read emails
+clawmail process --yes --quiet      # quiet automation mode
+clawmail process --label "GitHub"   # process a specific label
+clawmail process --compare haiku    # compare two models side-by-side
+clawmail process --days 7 --limit 20
 
 # View or edit triage rules
 clawmail rules
