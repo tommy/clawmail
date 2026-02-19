@@ -14,12 +14,9 @@ from rich.table import Table
 from clawmail import __version__
 from clawmail.config import (
     CONFIG_FILE,
-    PROCESSED_FILE,
-    add_processed_uids,
     get_anthropic_api_key,
     get_imap_password,
     load_config,
-    load_processed_uids,
     save_config,
     set_anthropic_api_key,
     set_imap_password,
@@ -127,7 +124,6 @@ def fetch(days, limit, fetch_all):
     max_emails = limit or config.fetch.max_emails
     unread_only = not fetch_all and config.fetch.unread_only
     mailbox = config.fetch.mailbox
-    excluded_uids = load_processed_uids()
 
     from clawmail.imap import IMAPClient
 
@@ -140,7 +136,6 @@ def fetch(days, limit, fetch_all):
                 days_back,
                 max_emails,
                 unread_only,
-                excluded_uids,
             )
     except Exception as e:
         err_console.print(f"[red]IMAP error: {e}[/red]")
@@ -210,7 +205,6 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
     max_emails = limit or config.fetch.max_emails
     unread_only = not fetch_all and config.fetch.unread_only
     mailbox = label or config.fetch.mailbox
-    excluded_uids = load_processed_uids()
 
     from clawmail.imap import IMAPClient
 
@@ -226,7 +220,6 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
                 days_back,
                 max_emails,
                 unread_only,
-                excluded_uids,
                 dry_run,
                 yes,
                 quiet,
@@ -246,7 +239,6 @@ def _process_with_connection(
     days_back: int,
     max_emails: int,
     unread_only: bool,
-    excluded_uids: set[int],
     dry_run: bool,
     yes: bool,
     quiet: bool,
@@ -261,7 +253,6 @@ def _process_with_connection(
         days_back,
         max_emails,
         unread_only,
-        excluded_uids,
     )
 
     if not emails:
@@ -460,11 +451,6 @@ def _process_with_connection(
     # Confirm
     actionable = [a for a in actions if a.action.value != "none"]
     if not actionable:
-        added = add_processed_uids(
-            {a.email_uid for a in actions if a.action.value == "none"},
-        )
-        if added:
-            out(f"[dim]Recorded {added} UID(s) in {PROCESSED_FILE}[/dim]")
         out("\n[dim]No actions to execute (all classified as 'none').[/dim]")
         return
 
@@ -495,7 +481,6 @@ def _process_with_connection(
     out("\n[bold]Executing actions...[/bold]")
     success_count = 0
     error_count = 0
-    successful_action_uids: set[int] = set()
 
     imap_client.select_mailbox(mailbox)
     for a in actionable:
@@ -509,18 +494,11 @@ def _process_with_connection(
             label = email_info.subject[:30] if email_info else f"UID {a.email_uid}"
             out(f"  [green]✓[/green] {a.action.value}: {label}")
             success_count += 1
-            successful_action_uids.add(a.email_uid)
         except Exception as e:
             err_console.print(f"  [red]✗[/red] UID {a.email_uid}: {e}")
             error_count += 1
 
     out(f"\n[bold]Done:[/bold] {success_count} succeeded, {error_count} failed.")
-
-    processed_now = {a.email_uid for a in actions if a.action.value == "none"}
-    processed_now.update(successful_action_uids)
-    added = add_processed_uids(processed_now)
-    if added:
-        out(f"[dim]Recorded {added} UID(s) in {PROCESSED_FILE}[/dim]")
 
 
 @cli.command()
