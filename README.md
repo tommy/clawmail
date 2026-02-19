@@ -61,7 +61,6 @@ clawmail rules --edit
 ## Configuration
 
 Config lives at `~/.config/clawmail/config.yaml`. See [config.example.yaml](config.example.yaml) for the full format.
-Processed message UIDs are tracked in `~/.config/clawmail/processed.txt` to avoid re-processing the same emails.
 
 Rules define categories, each with an action:
 
