@@ -24,6 +24,15 @@ clawmail = "clawmail.cli:cli"
 requires = ["uv_build>=0.10.0,<0.11.0"]
 build-backend = "uv_build"
 
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.14"
+typeCheckingMode = "basic"
+
+[tool.uv]
+python-preference = "managed"
+
 [dependency-groups]
 dev = [
     "ruff>=0.15.1",
