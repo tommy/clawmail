@@ -21,7 +21,7 @@ from clawmail.config import (
     set_anthropic_api_key,
     set_imap_password,
 )
-from clawmail.models import AppConfig
+from clawmail.models import ActionType, AppConfig
 
 console = Console(width=None if sys.stdout.isatty() else 160)
 err_console = Console(stderr=True)
@@ -379,11 +379,11 @@ def _process_with_connection(
         action_table.add_column("Reasoning", min_width=20)
 
         action_styles = {
-            "flag": "yellow",
-            "move": "blue",
-            "trash": "red",
-            "archive": "cyan",
-            "none": "dim",
+            ActionType.flag: "yellow",
+            ActionType.move: "blue",
+            ActionType.trash: "red",
+            ActionType.archive: "cyan",
+            ActionType.none: "dim",
         }
 
         for a in actions:
@@ -392,7 +392,7 @@ def _process_with_connection(
             flags = (
                 " ".join(f.strip("\\") for f in email_info.flags) if email_info else ""
             )
-            style = action_styles.get(a.action.value, "")
+            style = action_styles.get(a.action, "")
             action_table.add_row(
                 str(a.email_uid),
                 subject,
@@ -449,7 +449,7 @@ def _process_with_connection(
         return
 
     # Confirm
-    actionable = [a for a in actions if a.action.value != "none"]
+    actionable = [a for a in actions if a.action != ActionType.none]
     if not actionable:
         out("\n[dim]No actions to execute (all classified as 'none').[/dim]")
         return
@@ -476,7 +476,7 @@ def _process_with_connection(
             return
 
     # Execute actions — flags first (no expunge), then moves/trash/archive
-    actionable.sort(key=lambda a: 0 if a.action.value == "flag" else 1)
+    actionable.sort(key=lambda a: 0 if a.action == ActionType.flag else 1)
 
     out("\n[bold]Executing actions...[/bold]")
     success_count = 0
@@ -487,7 +487,7 @@ def _process_with_connection(
         try:
             imap_client.execute_action(
                 a.email_uid,
-                a.action.value,
+                a.action,
                 a.target_folder,
             )
             email_info = email_map.get(a.email_uid)

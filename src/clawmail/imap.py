@@ -10,7 +10,7 @@ import textwrap
 import time
 from datetime import datetime, timedelta, timezone
 
-from clawmail.models import EmailSummary
+from clawmail.models import ActionType, EmailSummary
 
 # Max body snippet length to control token cost
 SNIPPET_MAX_CHARS = 500
@@ -63,7 +63,7 @@ def _parse_email(uid: int, raw_bytes: bytes) -> EmailSummary:
     """Parse raw email bytes into an EmailSummary."""
     msg = email.message_from_bytes(raw_bytes, policy=email.policy.default)
 
-    has_attachments = msg.is_multipart() and any(True for _ in msg.iter_attachments())
+    has_attachments = msg.is_multipart() and any(msg.iter_attachments())
 
     date = None
     date_str = msg.get("Date", "")
@@ -177,7 +177,7 @@ class IMAPClient:
     def execute_action(
         self,
         uid: int,
-        action: str,
+        action: ActionType,
         target_folder: str | None = None,
     ) -> None:
         """Execute a single action on an email by UID.
@@ -187,21 +187,21 @@ class IMAPClient:
         """
         uid_str = str(uid)
 
-        if action == "flag":
+        if action == ActionType.flag:
             self.conn.uid("store", uid_str, "+FLAGS", "(\\Flagged)")
 
-        elif action == "trash":
+        elif action == ActionType.trash:
             # Gmail: copy to Trash, then mark deleted in current folder
             self.conn.uid("copy", uid_str, _quote_folder("[Gmail]/Trash"))
             self.conn.uid("store", uid_str, "+FLAGS", "(\\Deleted)")
             self.conn.expunge()
 
-        elif action == "archive":
+        elif action == ActionType.archive:
             # Gmail archive: remove from inbox, message stays in All Mail
             self.conn.uid("store", uid_str, "+FLAGS", "(\\Deleted)")
             self.conn.expunge()
 
-        elif action == "move" and target_folder:
+        elif action == ActionType.move and target_folder:
             self.conn.uid("copy", uid_str, _quote_folder(target_folder))
             self.conn.uid("store", uid_str, "+FLAGS", "(\\Deleted)")
             self.conn.expunge()
