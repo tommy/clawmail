@@ -2,7 +2,16 @@ imap:
   host: imap.gmail.com
   port: 993
   email: user@gmail.com
+  trash_folder: "[Gmail]/Trash"
+  # archive_folder: null  # null = delete-from-inbox (Gmail default)
   # Password stored in OS keychain, NOT here
+
+  # iCloud example:
+  # host: imap.mail.me.com
+  # port: 993
+  # email: user@icloud.com
+  # trash_folder: Deleted Messages
+  # archive_folder: Archive
 
 anthropic:
   model: claude-sonnet-4-5

@@ -1,12 +1,12 @@
 # Clawmail
 
-AI-powered email triage CLI. Connects to Gmail over IMAP, classifies emails with Claude, and acts on them based on your rules.
+AI-powered email triage CLI. Connects to Gmail, iCloud, or other IMAP providers, classifies emails with Claude, and acts on them based on your rules.
 
 ## Requirements
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- Gmail account with an [App Password](https://myaccount.google.com/apppasswords)
+- Gmail, iCloud, or other IMAP email account with an app-specific password
 - [Anthropic API key](https://console.anthropic.com/)
 
 ## Installation
@@ -31,7 +31,7 @@ uv tool install --editable .
 clawmail configure
 ```
 
-This prompts for your Gmail address, App Password, and Anthropic API key. Credentials are stored in your OS keychain.
+This prompts for your email address, app password, and Anthropic API key. Provider-specific defaults (IMAP host, folder names) are auto-detected from your email domain. Credentials are stored in your OS keychain.
 
 ## Usage
 
@@ -75,7 +75,13 @@ Rules define categories, each with an action:
 
 In `--dry-run` mode, Claude also suggests new categories you might want to add based on the emails it saw. Customize the `suggestions_prompt` in your config to steer these suggestions.
 
-## Gmail notes
+## Provider notes
 
+### Gmail
 - Target folders for `move` actions must already exist as Gmail labels — create them in Gmail's UI first.
 - Gmail requires an App Password, not your regular password. Generate one at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
+
+### iCloud
+- Generate an app-specific password at [appleid.apple.com](https://appleid.apple.com/account/manage) → App-Specific Passwords.
+- iCloud uses `Deleted Messages` as the trash folder and `Archive` for archiving.
+- Target folders for `move` actions must already exist — create them in Mail.app or iCloud Mail on the web.

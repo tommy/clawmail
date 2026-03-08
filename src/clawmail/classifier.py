@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 
 import anthropic
@@ -15,6 +16,8 @@ from clawmail.models import (
     EmailSummary,
     SuggestionsResult,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class EmailClassifier:
@@ -63,6 +66,7 @@ class EmailClassifier:
         }
 
         result = response.parsed_output
+        assert result is not None
 
         # Resolve classifications into actions using config rules
         actions = []
@@ -124,9 +128,7 @@ class EmailClassifier:
     def _build_user_message(self, emails: list[EmailSummary]) -> str:
         """Build user message as JSON array of email summaries."""
         fields = {"uid", "subject", "sender", "date", "snippet", "has_attachments"}
-        summaries = [
-            e.model_dump(include=fields, mode="json") for e in emails
-        ]
+        summaries = [e.model_dump(include=fields, mode="json") for e in emails]
         return "Classify the following emails:\n\n" + json.dumps(
             summaries, indent=2, ensure_ascii=False
         )
@@ -185,6 +187,8 @@ class EmailClassifier:
             "output_tokens": response.usage.output_tokens,
         }
 
+        assert response.parsed_output is not None
+
         return response.parsed_output, usage
 
     def test_connection(self) -> bool:
@@ -192,5 +196,6 @@ class EmailClassifier:
         try:
             self.client.models.retrieve(self.model)
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning("Anthropic API connection test failed: %s", e)
             return False

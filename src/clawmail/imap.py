@@ -3,19 +3,24 @@
 from __future__ import annotations
 
 import email
+import email.message
 import email.policy
+import email.utils
 import imaplib
+import logging
 import re
 import textwrap
 import time
 from datetime import datetime, timedelta, timezone
 
-from clawmail.models import EmailSummary
+from clawmail.models import EmailSummary, ImapConfig
+
+logger = logging.getLogger(__name__)
 
 # Max body snippet length to control token cost
 SNIPPET_MAX_CHARS = 500
 
-# Delay between IMAP actions to avoid Gmail rate limits
+# Delay between IMAP actions to avoid server rate limits
 ACTION_DELAY = 0.1
 
 
@@ -87,11 +92,13 @@ def _parse_email(uid: int, raw_bytes: bytes) -> EmailSummary:
 class IMAPClient:
     """IMAP connection manager used as a context manager."""
 
-    def __init__(self, host: str, port: int, email_address: str, password: str):
-        self.host = host
-        self.port = port
-        self.email_address = email_address
+    def __init__(self, config: ImapConfig, password: str):
+        self.host = config.host
+        self.port = config.port
+        self.email_address = config.email  # pyright: ignore
         self.password = password
+        self.trash_folder = config.trash_folder
+        self.archive_folder = config.archive_folder
         self._conn: imaplib.IMAP4_SSL | None = None
 
     def __enter__(self) -> IMAPClient:
@@ -161,23 +168,36 @@ class IMAPClient:
         emails = []
         for uid_bytes in uids:
             uid_str = uid_bytes.decode()
-            status, msg_data = self.conn.uid("fetch", uid_str, "(RFC822 FLAGS)")
-            if status != "OK" or not msg_data or not msg_data[0]:
+            status, msg_data = self.conn.uid("fetch", uid_str, "(BODY.PEEK[] FLAGS)")
+            if status != "OK" or not msg_data:
                 continue
 
-            raw_email = msg_data[0][1]
+            # Response format varies by server: the body is in a tuple part,
+            # flags may be in the same tuple's metadata or a separate bytes part.
+            raw_email = None
+            metadata_parts: list[bytes] = []
+            for part in msg_data:
+                if isinstance(part, tuple):
+                    metadata_parts.append(part[0])
+                    raw_email = part[1]
+                elif isinstance(part, bytes):
+                    metadata_parts.append(part)
+
+            if raw_email is None:
+                continue
+
             uid_int = int(uid_str)
             try:
                 summary = _parse_email(uid_int, raw_email)
-                # Extract flags
-                flags_match = re.search(rb"FLAGS \(([^)]*)\)", msg_data[0][0])
+                combined_metadata = b" ".join(metadata_parts)
+                flags_match = re.search(rb"FLAGS \(([^)]*)\)", combined_metadata)
                 if flags_match:
                     summary.flags = [
                         f.decode() for f in flags_match.group(1).split() if f
                     ]
                 emails.append(summary)
-            except Exception:
-                # Skip emails that fail to parse
+            except Exception as e:
+                logger.warning("Failed to parse UID %s: %s", uid_str, e)
                 continue
 
         return emails
@@ -203,13 +223,13 @@ class IMAPClient:
             self.conn.uid("store", uid_str, "+FLAGS", "(\\Flagged)")
 
         elif action == "trash":
-            # Gmail: copy to Trash, then mark deleted in current folder
-            self.conn.uid("copy", uid_str, _quote_folder("[Gmail]/Trash"))
+            self.conn.uid("copy", uid_str, _quote_folder(self.trash_folder))
             self.conn.uid("store", uid_str, "+FLAGS", "(\\Deleted)")
             self.conn.expunge()
 
         elif action == "archive":
-            # Gmail archive: remove from inbox, message stays in All Mail
+            if self.archive_folder:
+                self.conn.uid("copy", uid_str, _quote_folder(self.archive_folder))
             self.conn.uid("store", uid_str, "+FLAGS", "(\\Deleted)")
             self.conn.expunge()
 
@@ -247,5 +267,6 @@ class IMAPClient:
         try:
             self.conn.select("INBOX", readonly=True)
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning("IMAP connection test failed: %s", e)
             return False

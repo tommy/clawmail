@@ -18,20 +18,22 @@ CONFIG_FILE = CONFIG_DIR / "config.yaml"
 PROCESSED_FILE = CONFIG_DIR / "processed.txt"
 
 
-def load_config() -> AppConfig:
+def load_config(path: Path | None = None) -> AppConfig:
     """Load config from YAML file, falling back to defaults."""
-    if CONFIG_FILE.exists():
-        with open(CONFIG_FILE) as f:
+    config_file = path or CONFIG_FILE
+    if config_file.exists():
+        with open(config_file) as f:
             user_config = yaml.safe_load(f) or {}
         return AppConfig.model_validate(user_config)
     return AppConfig()
 
 
-def save_config(config: AppConfig) -> None:
+def save_config(config: AppConfig, path: Path | None = None) -> None:
     """Write config to YAML file."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    config_file = path or CONFIG_FILE
+    config_file.parent.mkdir(parents=True, exist_ok=True)
     data = config.model_dump(mode="json")
-    with open(CONFIG_FILE, "w") as f:
+    with open(config_file, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 
@@ -70,17 +72,20 @@ def add_processed_uids(uids: set[int]) -> int:
     return len(new_uids)
 
 
-def get_imap_password() -> str | None:
+def get_imap_password(email_address: str) -> str | None:
     """Retrieve IMAP password from keyring, falling back to env var."""
     password = os.environ.get("CLAWMAIL_IMAP_PASSWORD")
     if password:
         return password
-    return keyring.get_password(APP_NAME, "imap_password")
+    # Fall back to the old unscoped key for existing installs
+    return keyring.get_password(
+        APP_NAME, f"imap_password:{email_address}"
+    ) or keyring.get_password(APP_NAME, "imap_password")
 
 
-def set_imap_password(password: str) -> None:
-    """Store IMAP password in OS keyring."""
-    keyring.set_password(APP_NAME, "imap_password", password)
+def set_imap_password(email_address: str, password: str) -> None:
+    """Store IMAP password in OS keyring, scoped to the email address."""
+    keyring.set_password(APP_NAME, f"imap_password:{email_address}", password)
 
 
 def get_anthropic_api_key() -> str | None:

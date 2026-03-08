@@ -93,6 +93,8 @@ class ImapConfig(BaseModel):
     host: str = "imap.gmail.com"
     port: int = 993
     email: str = ""
+    trash_folder: str = "[Gmail]/Trash"
+    archive_folder: str | None = None  # None = delete-from-inbox (Gmail behavior)
 
 
 class AnthropicConfig(BaseModel):

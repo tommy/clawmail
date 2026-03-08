@@ -12,6 +12,8 @@ from rich.prompt import Confirm
 from rich.table import Table
 
 from clawmail import __version__
+from pathlib import Path
+
 from clawmail.config import (
     CONFIG_FILE,
     PROCESSED_FILE,
@@ -43,29 +45,67 @@ def resolve_model(name: str) -> str:
 
 @click.group()
 @click.version_option(version=__version__)
-def cli():
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Path to config file (default: ~/.config/clawmail/config.yaml)",
+)
+@click.option("--verbose", "-v", is_flag=True, help="Show IMAP protocol traffic")
+@click.pass_context
+def cli(ctx, config_path, verbose):
     """Clawmail - AI-powered email triage using Claude."""
+    ctx.ensure_object(dict)
+    ctx.obj["config_path"] = config_path
+    if verbose:
+        import imaplib
+
+        imaplib.Debug = 4
 
 
 @cli.command()
-def configure():
+@click.pass_context
+def configure(ctx):
     """Interactive setup: email, App Password, API key. Tests both connections."""
-    config = load_config()
+    config_path = ctx.obj["config_path"]
+    config = load_config(config_path)
 
     console.print("\n[bold]Clawmail Configuration[/bold]\n")
 
     # IMAP setup
-    email_addr = click.prompt("Gmail address", default=config.imap.email or None)
+    email_addr = click.prompt("Email address", default=config.imap.email or None)
     config.imap.email = email_addr
 
-    console.print(
-        "\n[dim]Gmail requires an App Password (not your regular password).[/dim]"
-    )
-    console.print(
-        "[dim]Generate one at: https://myaccount.google.com/apppasswords[/dim]\n"
-    )
-    app_password = click.prompt("Gmail App Password", hide_input=True)
-    set_imap_password(app_password)
+    # Auto-detect provider defaults from email domain
+    domain = email_addr.rsplit("@", 1)[-1].lower() if "@" in email_addr else ""
+    if domain in ("icloud.com", "me.com", "mac.com"):
+        config.imap.host = "imap.mail.me.com"
+        config.imap.trash_folder = "Deleted Messages"
+        config.imap.archive_folder = "Archive"
+        console.print(
+            "\n[dim]iCloud requires an App-Specific Password (not your Apple ID password).[/dim]"
+        )
+        console.print(
+            "[dim]Generate one at: https://appleid.apple.com/account/manage → App-Specific Passwords[/dim]\n"
+        )
+    elif domain in ("gmail.com", "googlemail.com"):
+        config.imap.host = "imap.gmail.com"
+        config.imap.trash_folder = "[Gmail]/Trash"
+        config.imap.archive_folder = None
+        console.print(
+            "\n[dim]Gmail requires an App Password (not your regular password).[/dim]"
+        )
+        console.print(
+            "[dim]Generate one at: https://myaccount.google.com/apppasswords[/dim]\n"
+        )
+    else:
+        console.print(
+            "\n[dim]Most providers require an app-specific password.[/dim]\n"
+        )
+
+    app_password = click.prompt("App Password", hide_input=True)
+    set_imap_password(email_addr, app_password)
 
     # Anthropic API key
     console.print()
@@ -73,17 +113,15 @@ def configure():
     set_anthropic_api_key(api_key)
 
     # Save config
-    save_config(config)
-    console.print(f"\n[green]Config saved to {CONFIG_FILE}[/green]")
+    save_config(config, config_path)
+    console.print(f"\n[green]Config saved to {config_path or CONFIG_FILE}[/green]")
 
     # Test IMAP connection
     console.print("\nTesting IMAP connection...", end=" ")
     try:
         from clawmail.imap import IMAPClient
 
-        with IMAPClient(
-            config.imap.host, config.imap.port, config.imap.email, app_password
-        ) as client:
+        with IMAPClient(config.imap, app_password) as client:
             if client.test_connection():
                 console.print("[green]OK[/green]")
             else:
@@ -114,11 +152,12 @@ def configure():
 @click.option("--days", default=None, type=int, help="Days back to fetch")
 @click.option("--limit", default=None, type=int, help="Max emails to fetch")
 @click.option("--all", "fetch_all", is_flag=True, help="Include read emails")
-def fetch(days, limit, fetch_all):
+@click.pass_context
+def fetch(ctx, days, limit, fetch_all):
     """Fetch and display recent emails (read-only)."""
-    config = load_config()
+    config = load_config(ctx.obj["config_path"])
 
-    password = get_imap_password()
+    password = get_imap_password(config.imap.email)
     if not password:
         err_console.print("[red]No IMAP password found. Run: clawmail configure[/red]")
         sys.exit(1)
@@ -132,9 +171,7 @@ def fetch(days, limit, fetch_all):
     from clawmail.imap import IMAPClient
 
     try:
-        with IMAPClient(
-            config.imap.host, config.imap.port, config.imap.email, password
-        ) as client:
+        with IMAPClient(config.imap, password) as client:
             emails = client.fetch_recent(
                 mailbox,
                 days_back,
@@ -177,7 +214,7 @@ def fetch(days, limit, fetch_all):
     "--label",
     default=None,
     type=str,
-    help="Process emails in this Gmail label instead of INBOX",
+    help="Process emails in this IMAP folder instead of INBOX",
 )
 @click.option(
     "--compare",
@@ -185,16 +222,17 @@ def fetch(days, limit, fetch_all):
     type=str,
     help="Compare with alternate model (e.g. haiku, opus)",
 )
-def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
+@click.pass_context
+def process(ctx, dry_run, yes, days, limit, fetch_all, quiet, label, compare):
     """Fetch, classify with Claude, confirm, and execute actions."""
 
     def out(*args, **kwargs):
         if not quiet:
             console.print(*args, **kwargs)
 
-    config = load_config()
+    config = load_config(ctx.obj["config_path"])
 
-    password = get_imap_password()
+    password = get_imap_password(config.imap.email)
     api_key = get_anthropic_api_key()
 
     if not password:
@@ -215,9 +253,7 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
     from clawmail.imap import IMAPClient
 
     try:
-        with IMAPClient(
-            config.imap.host, config.imap.port, config.imap.email, password
-        ) as imap_client:
+        with IMAPClient(config.imap, password) as imap_client:
             _process_with_connection(
                 imap_client,
                 config,
@@ -475,9 +511,9 @@ def _process_with_connection(
         missing = needed_folders - existing_folders
         if missing:
             err_console.print(
-                f"[red]Missing Gmail labels: {', '.join(sorted(missing))}[/red]"
+                f"[red]Missing IMAP folders: {', '.join(sorted(missing))}[/red]"
             )
-            err_console.print("[red]Create them in Gmail before running again.[/red]")
+            err_console.print("[red]Create them on your mail server before running again.[/red]")
             sys.exit(1)
 
     if not yes:
@@ -525,17 +561,20 @@ def _process_with_connection(
 
 @cli.command()
 @click.option("--edit", is_flag=True, help="Open config in $EDITOR")
-def rules(edit):
+@click.pass_context
+def rules(ctx, edit):
     """View current rules or edit config."""
+    config_path = ctx.obj["config_path"]
+    config_file = config_path or CONFIG_FILE
     if edit:
         editor = os.environ.get("EDITOR", "vi")
-        if not CONFIG_FILE.exists():
-            save_config(load_config())
-            console.print(f"[dim]Created default config at {CONFIG_FILE}[/dim]")
-        subprocess.run([editor, str(CONFIG_FILE)])
+        if not config_file.exists():
+            save_config(load_config(config_path), config_path)
+            console.print(f"[dim]Created default config at {config_file}[/dim]")
+        subprocess.run([editor, str(config_file)])
         return
 
-    config = load_config()
+    config = load_config(config_path)
 
     if not config.rules.categories:
         console.print("[dim]No rules configured.[/dim]")
@@ -555,15 +594,16 @@ def rules(edit):
     console.print(table)
 
     console.print(f"\n[dim]System prompt:[/dim] {config.rules.system_prompt[:100]}...")
-    console.print(f"[dim]Config file:[/dim] {CONFIG_FILE}")
+    console.print(f"[dim]Config file:[/dim] {config_file}")
 
 
 @cli.command()
-def folders():
+@click.pass_context
+def folders(ctx):
     """List all IMAP folders."""
-    config = load_config()
+    config = load_config(ctx.obj["config_path"])
 
-    password = get_imap_password()
+    password = get_imap_password(config.imap.email)
     if not password:
         err_console.print("[red]No IMAP password found. Run: clawmail configure[/red]")
         sys.exit(1)
@@ -571,9 +611,7 @@ def folders():
     from clawmail.imap import IMAPClient
 
     try:
-        with IMAPClient(
-            config.imap.host, config.imap.port, config.imap.email, password
-        ) as client:
+        with IMAPClient(config.imap, password) as client:
             folder_list = client.list_folders()
     except Exception as e:
         err_console.print(f"[red]IMAP error: {e}[/red]")
