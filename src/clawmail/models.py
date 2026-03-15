@@ -108,6 +108,12 @@ class FetchConfig(BaseModel):
 
 
 class RulesConfig(BaseModel):
+    confidence_threshold: float = Field(
+        default=0.8,
+        ge=0,
+        le=1,
+        description="Minimum confidence required to execute an action (0-1).",
+    )
     system_prompt: str = (
         "You are an email triage assistant. "
         "Categorize each email and decide what action to take."

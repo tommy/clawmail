@@ -459,7 +459,24 @@ def _process_with_connection(
         return
 
     # Confirm
-    actionable = [a for a in actions if a.action != ActionType.none]
+    threshold = config.rules.confidence_threshold
+    skipped_low_conf = [
+        a for a in actions if a.action != ActionType.none and a.confidence < threshold
+    ]
+    actionable = [
+        a
+        for a in actions
+        if a.action != ActionType.none and a.confidence >= threshold
+    ]
+    if skipped_low_conf:
+        out(
+            f"\n[dim]Skipping {len(skipped_low_conf)} email(s) below confidence"
+            f" threshold ({threshold:.0%}):[/dim]"
+        )
+        for a in skipped_low_conf:
+            email_info = email_map.get(a.email_uid)
+            subject = email_info.subject[:40] if email_info else f"UID {a.email_uid}"
+            out(f"  [dim]UID {a.email_uid} ({a.confidence:.0%}): {subject}[/dim]")
     if not actionable:
         out("\n[dim]No actions to execute (all classified as 'none').[/dim]")
         return
