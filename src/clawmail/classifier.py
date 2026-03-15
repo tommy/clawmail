@@ -23,7 +23,7 @@ class EmailClassifier:
     def __init__(
         self,
         api_key: str,
-        model: str = "claude-sonnet-4-5",
+        model: str = "claude-sonnet-4-6",
         max_tokens: int = 1024,
     ):
         self.client = anthropic.Anthropic(api_key=api_key)
