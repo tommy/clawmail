@@ -102,7 +102,7 @@ class AnthropicConfig(BaseModel):
 
 class FetchConfig(BaseModel):
     mailbox: str = "INBOX"
-    days_back: int = 1
+    days_back: int = 30
     max_emails: int = 50
     unread_only: bool = True
 
