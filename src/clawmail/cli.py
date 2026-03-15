@@ -364,18 +364,8 @@ def _process_with_connection(
         out("\n[dim]Compare mode — no actions executed.[/dim]")
         return
 
-    # Display proposed actions
+    # Display proposed actions grouped by matched rule/category
     if not quiet:
-        action_table = Table(title="Proposed Actions")
-        action_table.add_column("UID", style="dim", width=8)
-        action_table.add_column("Subject", min_width=25)
-        action_table.add_column("Flags", style="dim", width=10)
-        action_table.add_column("Category", width=12)
-        action_table.add_column("Conf", width=5)
-        action_table.add_column("Action", width=8)
-        action_table.add_column("Target", width=15)
-        action_table.add_column("Reasoning", min_width=20, max_width=40)
-
         action_styles = {
             ActionType.flag: "yellow",
             ActionType.move: "blue",
@@ -384,7 +374,30 @@ def _process_with_connection(
             ActionType.none: "dim",
         }
 
-        for a in actions:
+        # Sort by category so groups are contiguous
+        sorted_actions = sorted(actions, key=lambda a: a.category)
+
+        action_table = Table(title="Proposed Actions")
+        action_table.add_column("UID", style="dim", width=8)
+        action_table.add_column("Subject", min_width=25)
+        action_table.add_column("Flags", style="dim", width=10)
+        action_table.add_column("Conf", width=5)
+        action_table.add_column("Action", width=8)
+        action_table.add_column("Target", width=15)
+        action_table.add_column("Reasoning", min_width=20, max_width=40)
+
+        current_category = None
+        for a in sorted_actions:
+            if a.category != current_category:
+                if current_category is not None:
+                    action_table.add_section()
+                style = action_styles.get(a.action, "")
+                action_table.add_row(
+                    f"[bold]{a.category}[/bold]",
+                    "", "", "", "", "", "",
+                    end_section=True,
+                )
+                current_category = a.category
             email_info = email_map.get(a.email_uid)
             subject = email_info.subject[:40] if email_info else f"UID {a.email_uid}"
             flags = (
@@ -395,7 +408,6 @@ def _process_with_connection(
                 str(a.email_uid),
                 subject,
                 flags,
-                a.category,
                 f"{a.confidence:.0%}",
                 f"[{style}]{a.action.value}[/{style}]",
                 a.target_folder or "",
