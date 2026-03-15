@@ -207,10 +207,10 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
         )
         sys.exit(1)
 
-    days_back = days or config.fetch.days_back
-    max_emails = limit or config.fetch.max_emails
-    unread_only = not fetch_all and config.fetch.unread_only
-    mailbox = label or config.fetch.mailbox
+    config.fetch.days_back = days or config.fetch.days_back
+    config.fetch.max_emails = limit or config.fetch.max_emails
+    config.fetch.unread_only = not fetch_all and config.fetch.unread_only
+    config.fetch.mailbox = label or config.fetch.mailbox
 
     from clawmail.imap import IMAPClient
 
@@ -222,10 +222,6 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
                 imap_client,
                 config,
                 api_key,
-                mailbox,
-                days_back,
-                max_emails,
-                unread_only,
                 dry_run,
                 yes,
                 quiet,
@@ -241,10 +237,6 @@ def _process_with_connection(
     imap_client,
     config: AppConfig,
     api_key: str,
-    mailbox: str,
-    days_back: int,
-    max_emails: int,
-    unread_only: bool,
     dry_run: bool,
     yes: bool,
     quiet: bool,
@@ -255,10 +247,10 @@ def _process_with_connection(
     # Fetch emails (readonly)
     out("[bold]Fetching emails...[/bold]")
     emails = imap_client.fetch_recent(
-        mailbox,
-        days_back,
-        max_emails,
-        unread_only,
+        config.fetch.mailbox,
+        config.fetch.days_back,
+        config.fetch.max_emails,
+        config.fetch.unread_only,
     )
 
     if not emails:
@@ -374,7 +366,7 @@ def _process_with_connection(
 
     # Display proposed actions
     if not quiet:
-        action_table = Table(title="Proposed Actions", expand=True)
+        action_table = Table(title="Proposed Actions")
         action_table.add_column("UID", style="dim", width=8)
         action_table.add_column("Subject", min_width=25)
         action_table.add_column("Flags", style="dim", width=10)
@@ -382,7 +374,7 @@ def _process_with_connection(
         action_table.add_column("Conf", width=5)
         action_table.add_column("Action", width=8)
         action_table.add_column("Target", width=15)
-        action_table.add_column("Reasoning", min_width=20)
+        action_table.add_column("Reasoning", min_width=20, max_width=40)
 
         action_styles = {
             ActionType.flag: "yellow",
@@ -488,7 +480,7 @@ def _process_with_connection(
     success_count = 0
     error_count = 0
 
-    imap_client.select_mailbox(mailbox)
+    imap_client.select_mailbox(config.fetch.mailbox)
     for a in actionable:
         try:
             imap_client.execute_action(
