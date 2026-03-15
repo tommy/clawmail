@@ -111,7 +111,13 @@ def configure():
 @click.option("--days", default=None, type=int, help="Days back to fetch")
 @click.option("--limit", default=None, type=int, help="Max emails to fetch")
 @click.option("--all", "fetch_all", is_flag=True, help="Include read emails")
-def fetch(days, limit, fetch_all):
+@click.option(
+    "--label",
+    default=None,
+    type=str,
+    help="Fetch emails from this Gmail label instead of INBOX",
+)
+def fetch(days, limit, fetch_all, label):
     """Fetch and display recent emails (read-only)."""
     config = load_config()
 
@@ -123,7 +129,7 @@ def fetch(days, limit, fetch_all):
     days_back = days or config.fetch.days_back
     max_emails = limit or config.fetch.max_emails
     unread_only = not fetch_all and config.fetch.unread_only
-    mailbox = config.fetch.mailbox
+    mailbox = label or config.fetch.mailbox
 
     from clawmail.imap import IMAPClient
 
