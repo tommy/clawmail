@@ -174,6 +174,7 @@ def fetch(days, limit, fetch_all, label):
 @click.option("--limit", default=None, type=int, help="Max emails to process")
 @click.option("--all", "fetch_all", is_flag=True, help="Include read emails")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress non-error output")
+@click.option("--debug", is_flag=True, help="Print full text sent to Anthropic")
 @click.option(
     "--label",
     default=None,
@@ -186,7 +187,7 @@ def fetch(days, limit, fetch_all, label):
     type=str,
     help="Compare with alternate model (e.g. haiku, opus)",
 )
-def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
+def process(dry_run, yes, days, limit, fetch_all, quiet, debug, label, compare):
     """Fetch, classify with Claude, confirm, and execute actions."""
 
     def out(*args, **kwargs):
@@ -225,6 +226,7 @@ def process(dry_run, yes, days, limit, fetch_all, quiet, label, compare):
                 dry_run,
                 yes,
                 quiet,
+                debug,
                 compare,
                 out,
             )
@@ -240,6 +242,7 @@ def _process_with_connection(
     dry_run: bool,
     yes: bool,
     quiet: bool,
+    debug: bool,
     compare: str | None,
     out,
 ):
@@ -284,7 +287,7 @@ def _process_with_connection(
             model=config.anthropic.model,
             max_tokens=config.anthropic.max_tokens,
         )
-        actions, usage = classifier.classify(to_classify, categories, system_prompt)
+        actions, usage = classifier.classify(to_classify, categories, system_prompt, debug=debug)
     except Exception as e:
         err_console.print(f"[red]Classification error: {e}[/red]")
         sys.exit(1)

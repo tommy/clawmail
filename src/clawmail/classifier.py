@@ -35,6 +35,7 @@ class EmailClassifier:
         emails: list[EmailSummary],
         categories: list[CategoryRule],
         system_prompt: str,
+        debug: bool = False,
     ) -> tuple[list[EmailAction], dict]:
         """Classify a batch of emails using Claude structured output.
 
@@ -46,6 +47,14 @@ class EmailClassifier:
         full_system = self._build_system_prompt(system_prompt, categories)
         user_message = self._build_user_message(emails)
 
+        if debug:
+            print("\n=== DEBUG: Anthropic classify request ===")
+            print("--- System prompt ---")
+            print(full_system)
+            print("\n--- User message ---")
+            print(user_message)
+            print("=========================================\n")
+
         # ~100 output tokens per email for structured JSON + overhead
         required_tokens = max(self.max_tokens, len(emails) * 100 + 256)
 
@@ -56,6 +65,11 @@ class EmailClassifier:
             messages=[{"role": "user", "content": user_message}],
             output_format=ClassificationResult,
         )
+
+        if debug:
+            print("\n=== DEBUG: Anthropic classify response ===")
+            print(response.model_dump_json(indent=2))
+            print("==========================================\n")
 
         usage = {
             "input_tokens": response.usage.input_tokens,
@@ -108,9 +122,9 @@ class EmailClassifier:
         self, base_prompt: str, categories: list[CategoryRule]
     ) -> str:
         """Build full system prompt with category descriptions."""
-        lines = [base_prompt.strip(), "", "Available categories:"]
+        lines = [base_prompt.strip(), "", "## Available categories"]
         for cat in categories:
-            lines.append(f"- {cat.name}: {cat.description}")
+            lines.append(f"\n### {cat.name}\n{cat.description}")
 
         lines.extend(
             [

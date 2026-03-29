@@ -164,8 +164,8 @@ class IMAPClient:
                         f.decode() for f in flags_match.group(1).split() if f
                     ]
                 emails.append(summary)
-            except Exception:
-                # Skip emails that fail to parse
+            except Exception as e:
+                print(f"Warning: failed to parse email UID {uid_str}: {e}", flush=True)
                 continue
 
         return emails
